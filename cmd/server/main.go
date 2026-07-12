@@ -5,7 +5,8 @@ import (
 	"errors"
 	"log"
 	"net/http"
-	"time"
+
+	"github.com/frimo-dev/frimo-messenger/internal/config"
 )
 
 type healthResponse struct {
@@ -13,21 +14,27 @@ type healthResponse struct {
 }
 
 func main() {
+	cfg, err := config.Load()
+
+	if err != nil {
+		log.Fatalf("load config: %v", err)
+	}
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", healthHandler)
 
 	server := &http.Server{
-		Addr:              ":8080",
+		Addr:              cfg.HTTP.Address,
 		Handler:           mux,
-		ReadHeaderTimeout: 5 * time.Second,
-		ReadTimeout:       10 * time.Second,
-		WriteTimeout:      10 * time.Second,
-		IdleTimeout:       60 * time.Second,
+		ReadHeaderTimeout: cfg.HTTP.ReadHeaderTimeout,
+		ReadTimeout:       cfg.HTTP.ReadTimeout,
+		WriteTimeout:      cfg.HTTP.WriteTimeout,
+		IdleTimeout:       cfg.HTTP.IdleTimeout,
 	}
 
 	log.Printf("Server is listening on: %s", server.Addr)
 
-	err := server.ListenAndServe()
+	err = server.ListenAndServe()
 	if err != nil && !errors.Is(err, http.ErrServerClosed) {
 		log.Fatal(err)
 	}
