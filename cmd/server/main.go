@@ -1,10 +1,15 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"log"
 	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"github.com/frimo-dev/frimo-messenger/internal/config"
 )
@@ -32,11 +37,40 @@ func main() {
 		IdleTimeout:       cfg.HTTP.IdleTimeout,
 	}
 
-	log.Printf("Server is listening on: %s", server.Addr)
+	ctx, stop := signal.NotifyContext(
+		context.Background(),
+		os.Interrupt,
+		syscall.SIGTERM,
+	)
+	defer stop()
 
-	err = server.ListenAndServe()
-	if err != nil && !errors.Is(err, http.ErrServerClosed) {
-		log.Fatal(err)
+	serverError := make(chan error, 1)
+
+	go func() {
+		log.Printf("Server is listening on: %s", server.Addr)
+
+		err := server.ListenAndServe()
+		if err != nil && !errors.Is(err, http.ErrServerClosed) {
+			serverError <- err
+		}
+	}()
+
+	select {
+	case err := <-serverError:
+		log.Fatalf("server failed: %v", err)
+	case <-ctx.Done():
+		log.Println("shutdown signal received")
+	}
+
+	shutdownContext, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	if err := server.Shutdown(shutdownContext); err != nil {
+		log.Printf("graceful shutdown failed: %v", err)
+
+		if closeErr := server.Close(); closeErr != nil {
+			log.Printf("forced server close failed: %v", closeErr)
+		}
 	}
 }
 
