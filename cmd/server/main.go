@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"log"
 	"net/http"
@@ -12,11 +11,8 @@ import (
 	"time"
 
 	"github.com/frimo-dev/frimo-messenger/internal/config"
+	"github.com/frimo-dev/frimo-messenger/internal/httpapi"
 )
-
-type healthResponse struct {
-	Status string `json:"status"`
-}
 
 func main() {
 	cfg, err := config.Load()
@@ -25,12 +21,11 @@ func main() {
 		log.Fatalf("load config: %v", err)
 	}
 
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /health", healthHandler)
+	api := httpapi.New()
 
 	server := &http.Server{
 		Addr:              cfg.HTTP.Address,
-		Handler:           mux,
+		Handler:           api.Handler(),
 		ReadHeaderTimeout: cfg.HTTP.ReadHeaderTimeout,
 		ReadTimeout:       cfg.HTTP.ReadTimeout,
 		WriteTimeout:      cfg.HTTP.WriteTimeout,
@@ -71,18 +66,5 @@ func main() {
 		if closeErr := server.Close(); closeErr != nil {
 			log.Printf("forced server close failed: %v", closeErr)
 		}
-	}
-}
-
-func healthHandler(w http.ResponseWriter, _ *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-
-	response := healthResponse{
-		Status: "ok",
-	}
-
-	if err := json.NewEncoder(w).Encode(response); err != nil {
-		log.Printf("encode health response: %v", err)
 	}
 }
