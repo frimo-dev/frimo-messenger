@@ -8,6 +8,11 @@ import (
 
 type Config struct {
 	HTTP HTTPConfig
+	Database DatabaseConfig
+}
+
+type DatabaseConfig struct {
+	URL string
 }
 
 type HTTPConfig struct {
@@ -31,10 +36,17 @@ func Load() (Config, error) {
 			WriteTimeout:      10 * time.Second,
 			IdleTimeout:       60 * time.Second,
 		},
+		Database: DatabaseConfig{
+			URL: os.Getenv("DATABASE_URL"),
+		},
 	}
 
 	if cfg.HTTP.Address == "" {
 		return Config{}, fmt.Errorf("HTTP_ADDR must not be empty")
+	}
+
+	if cfg.Database.URL == "" {
+		return Config{}, fmt.Errorf("DATABASE_URL is required")
 	}
 
 	return cfg, nil

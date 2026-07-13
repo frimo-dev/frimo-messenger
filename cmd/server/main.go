@@ -13,6 +13,7 @@ import (
 	"github.com/frimo-dev/frimo-messenger/internal/config"
 	"github.com/frimo-dev/frimo-messenger/internal/httpapi"
 	"github.com/frimo-dev/frimo-messenger/internal/password"
+	"github.com/frimo-dev/frimo-messenger/internal/postgres"
 	"github.com/frimo-dev/frimo-messenger/internal/user"
 )
 
@@ -22,6 +23,18 @@ func main() {
 	if err != nil {
 		log.Fatalf("load config: %v", err)
 	}
+
+	databaseContext, cancelDatabase := context.WithTimeout(context.Background(), 5*time.Second)
+	databasePool, err := postgres.Open(databaseContext, cfg.Database.URL)
+	cancelDatabase()
+
+	if err != nil {
+		log.Fatalf("open database: %w", err)
+	}
+
+	defer databasePool.Close()
+
+	log.Println("database connection established")
 
 	userRepository := user.NewMemoryRepository()
 	passwordHasher := password.NewArgon2Hasher()
