@@ -12,6 +12,8 @@ import (
 
 	"github.com/frimo-dev/frimo-messenger/internal/config"
 	"github.com/frimo-dev/frimo-messenger/internal/httpapi"
+	"github.com/frimo-dev/frimo-messenger/internal/password"
+	"github.com/frimo-dev/frimo-messenger/internal/user"
 )
 
 func main() {
@@ -21,7 +23,11 @@ func main() {
 		log.Fatalf("load config: %v", err)
 	}
 
-	api := httpapi.New()
+	userRepository := user.NewMemoryRepository()
+	passwordHasher := password.NewArgon2Hasher()
+	userService := user.NewService(userRepository, passwordHasher)
+
+	api := httpapi.New(userService)
 
 	server := &http.Server{
 		Addr:              cfg.HTTP.Address,

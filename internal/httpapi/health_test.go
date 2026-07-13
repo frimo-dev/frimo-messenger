@@ -8,7 +8,7 @@ import (
 )
 
 func TestHealthHandler(t *testing.T) {
-	api := New()
+	api := newTestAPI()
 
 	request := httptest.NewRequest(http.MethodGet, "/health", nil)
 	recorder := httptest.NewRecorder()
