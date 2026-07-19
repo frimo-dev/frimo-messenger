@@ -36,7 +36,7 @@ func main() {
 
 	log.Println("database connection established")
 
-	userRepository := user.NewMemoryRepository()
+	userRepository := postgres.NewUserRepository(databasePool)
 	passwordHasher := password.NewArgon2Hasher()
 	userService := user.NewService(userRepository, passwordHasher)
 
