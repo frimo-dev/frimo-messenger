@@ -29,7 +29,7 @@ func main() {
 	cancelDatabase()
 
 	if err != nil {
-		log.Fatalf("open database: %w", err)
+		log.Fatalf("open database: %v", err)
 	}
 
 	defer databasePool.Close()
