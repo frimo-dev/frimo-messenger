@@ -7,9 +7,15 @@ import (
 )
 
 type Config struct {
-	HTTP                      HTTPConfig
-	Database                  DatabaseConfig
+	HTTP     HTTPConfig
+	Database DatabaseConfig
+	App      AppConfig
+
 	VerificationTokenLifetime time.Duration
+}
+
+type AppConfig struct {
+	BaseUrl string
 }
 
 type DatabaseConfig struct {
@@ -40,6 +46,9 @@ func Load() (Config, error) {
 		Database: DatabaseConfig{
 			URL: os.Getenv("DATABASE_URL"),
 		},
+		App: AppConfig{
+			BaseUrl: getEnv("APP_BASE_URL", "http://localhost:8080"),
+		},
 		VerificationTokenLifetime: 30 * time.Minute,
 	}
 
@@ -49,6 +58,10 @@ func Load() (Config, error) {
 
 	if cfg.Database.URL == "" {
 		return Config{}, fmt.Errorf("DATABASE_URL is required")
+	}
+
+	if cfg.App.BaseUrl == "" {
+		return Config{}, fmt.Errorf("APP_BASE_URL must not be empty")
 	}
 
 	return cfg, nil
