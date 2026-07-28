@@ -4,7 +4,9 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/frimo-dev/frimo-messenger/internal/user"
@@ -25,12 +27,12 @@ type registerResponse struct {
 func (a *API) registerUser(w http.ResponseWriter, r *http.Request) {
 	var request registerRequest
 
-	if err := decodeRegisterRequest(w, r, &request); err != nil {
+	if err := decodeJSON(w, r, &request); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
 		return
 	}
 
-	createdUser, err := a.userService.Register(r.Context(), user.RegisterInput{
+	result, err := a.userService.Register(r.Context(), user.RegistrationInput{
 		Email:    request.Email,
 		Password: request.Password,
 	})
@@ -67,13 +69,21 @@ func (a *API) registerUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	verificationURL := "http://localhost:8080/auth/verify-email?token=" + url.QueryEscape(result.RawVerificationToken)
+
+	log.Printf(
+		"development verification URL for %s: %s",
+		result.User.Email,
+		verificationURL,
+	)
+
 	writeJSON(w, http.StatusCreated, registerResponse{
-		ID:    createdUser.ID,
-		Email: createdUser.Email,
+		ID:    result.User.ID,
+		Email: result.User.Email,
 	})
 }
 
-func decodeRegisterRequest(w http.ResponseWriter, r *http.Request, destination *registerRequest) error {
+func decodeJSON(w http.ResponseWriter, r *http.Request, destination any) error {
 	r.Body = http.MaxBytesReader(w, r.Body, maxRegisterBodySize)
 
 	decoder := json.NewDecoder(r.Body)

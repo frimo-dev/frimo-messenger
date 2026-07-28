@@ -4,10 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"time"
 
 	"github.com/frimo-dev/frimo-messenger/internal/user"
-	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -25,22 +23,26 @@ func NewUserRepository(pool *pgxpool.Pool) *UserRepository {
 	}
 }
 
-func (ur *UserRepository) Create(ctx context.Context, email string, passwordHash string) (user.User, error) {
-	createdUser := user.User{
-		ID:        uuid.NewString(),
-		Email:     email,
-		CreatedAt: time.Now().UTC(),
+func (ur *UserRepository) Create(ctx context.Context, input user.CreationInput) (user.User, error) {
+	tx, err := ur.pool.Begin(ctx)
+
+	if err != nil {
+		return user.User{}, fmt.Errorf("create transaction: %w", err)
 	}
+
+	defer func() {
+		_ = tx.Rollback(ctx)
+	}()
 
 	const query = `INSERT INTO users (id, email, password_hash, created_at) VALUES ($1, $2, $3, $4)`
 
-	_, err := ur.pool.Exec(
+	_, err = ur.pool.Exec(
 		ctx,
 		query,
-		createdUser.ID,
-		createdUser.Email,
-		passwordHash,
-		createdUser.CreatedAt,
+		input.ID,
+		input.Email,
+		input.PasswordHash,
+		input.CreatedAt,
 	)
 
 	if err != nil {
@@ -50,7 +52,22 @@ func (ur *UserRepository) Create(ctx context.Context, email string, passwordHash
 
 		return user.User{}, fmt.Errorf("insert user: %w", err)
 	}
-	return createdUser, nil
+
+	const insertVerificationQuery = `INSERT INTO email_verifications (id, user_id, token_hash, expires_at, created_at) VALUES ($1, $2, $3, $4, $5)`
+
+	_, err = tx.Exec(ctx, insertVerificationQuery, input.VerificationID, input.ID, input.VerificationTokenHash, input.VerificationExpiresAt, input.CreatedAt)
+
+	if err != nil {
+		return user.User{}, fmt.Errorf("insert verification: %w", err)
+	}
+
+	err = tx.Commit(ctx)
+
+	if err != nil {
+		return user.User{}, fmt.Errorf("commit transaction: %w", err)
+	}
+
+	return user.User{ID: input.ID, Email: input.Email, CreatedAt: input.CreatedAt}, nil
 }
 
 func isEmailUniqueViolation(err error) bool {

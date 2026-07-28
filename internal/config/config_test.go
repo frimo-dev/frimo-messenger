@@ -4,7 +4,7 @@ import "testing"
 
 func TestDefaultValueAddr(t *testing.T) {
 	t.Setenv("DATABASE_URL", "postgres://user:password@localhost:5432/test")
-		
+
 	cfg, err := Load()
 
 	if err != nil {

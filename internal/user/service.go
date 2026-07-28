@@ -2,52 +2,90 @@ package user
 
 import (
 	"context"
+	"fmt"
 	"net/mail"
 	"strings"
+	"time"
 	"unicode/utf8"
-)
 
-type Repository interface {
-	Create(ctx context.Context, email string, password string) (User, error)
-}
+	"github.com/google/uuid"
+)
 
 type PasswordHasher interface {
 	Hash(password string) (string, error)
 }
 
-type Service struct {
-	repository     Repository
-	passwordHasher PasswordHasher
+type VerificationTokenGenerator interface {
+	Generate() (rawToken string, tokenHash []byte, err error)
 }
 
-func NewService(repository Repository, passwordHasher PasswordHasher) *Service {
+type RegistrationResult struct {
+	User                 User
+	RawVerificationToken string
+}
+
+type Service struct {
+	repository                Repository
+	passwordHasher            PasswordHasher
+	tokenGenerator            VerificationTokenGenerator
+	now                       func() time.Time
+	verificationTokenLifetime time.Duration
+}
+
+func NewService(repository Repository, passwordHasher PasswordHasher, tokenGenerator VerificationTokenGenerator, now func() time.Time, verificationTokenLifetime time.Duration) *Service {
 	return &Service{
-		repository:     repository,
-		passwordHasher: passwordHasher,
+		repository:                repository,
+		passwordHasher:            passwordHasher,
+		tokenGenerator:            tokenGenerator,
+		now:                       now,
+		verificationTokenLifetime: verificationTokenLifetime,
 	}
 }
 
-func (s *Service) Register(ctx context.Context, data RegisterInput) (User, error) {
-	email := normalizeEmail(data.Email)
+func (s *Service) Register(ctx context.Context, input RegistrationInput) (RegistrationResult, error) {
+	email := normalizeEmail(input.Email)
 
 	if err := validateEmail(email); err != nil {
-		return User{}, err
+		return RegistrationResult{}, err
 	}
 
-	if err := validatePassword(data.Password); err != nil {
-		return User{}, err
+	if err := validatePassword(input.Password); err != nil {
+		return RegistrationResult{}, err
 	}
 
-	passwordHash, err := s.passwordHasher.Hash(data.Password)
+	passwordHash, err := s.passwordHasher.Hash(input.Password)
 	if err != nil {
-		return User{}, err
+		return RegistrationResult{}, fmt.Errorf("hash password: %w", err)
 	}
 
-	return s.repository.Create(
+	rawToken, tokenHash, err := s.tokenGenerator.Generate()
+	if err != nil {
+		return RegistrationResult{}, fmt.Errorf("generate verification token: %w", err)
+	}
+
+	now := s.now().UTC()
+
+	createdUser, err := s.repository.Create(
 		ctx,
-		email,
-		passwordHash,
+		CreationInput{
+			ID:                    uuid.NewString(),
+			Email:                 email,
+			PasswordHash:          passwordHash,
+			VerificationID:        uuid.NewString(),
+			VerificationTokenHash: tokenHash,
+			VerificationExpiresAt: now.Add(s.verificationTokenLifetime),
+			CreatedAt:             now,
+		},
 	)
+
+	if err != nil {
+		return RegistrationResult{}, err
+	}
+
+	return RegistrationResult{
+		User:                 createdUser,
+		RawVerificationToken: rawToken,
+	}, nil
 }
 
 func normalizeEmail(email string) string {

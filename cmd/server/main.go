@@ -11,9 +11,11 @@ import (
 	"time"
 
 	"github.com/frimo-dev/frimo-messenger/internal/config"
+	"github.com/frimo-dev/frimo-messenger/internal/emailverification"
 	"github.com/frimo-dev/frimo-messenger/internal/httpapi"
 	"github.com/frimo-dev/frimo-messenger/internal/password"
 	"github.com/frimo-dev/frimo-messenger/internal/postgres"
+	"github.com/frimo-dev/frimo-messenger/internal/token"
 	"github.com/frimo-dev/frimo-messenger/internal/user"
 )
 
@@ -38,9 +40,13 @@ func main() {
 
 	userRepository := postgres.NewUserRepository(databasePool)
 	passwordHasher := password.NewArgon2Hasher()
-	userService := user.NewService(userRepository, passwordHasher)
+	tokenGenerator := token.NewGenerator()
+	userService := user.NewService(userRepository, passwordHasher, tokenGenerator, time.Now, cfg.VerificationTokenLifetime)
 
-	api := httpapi.New(userService)
+	emailVerificationRepository := postgres.NewEmailVerificationRepository(databasePool)
+	emailVerificationService := emailverification.NewService(emailVerificationRepository, time.Now)
+
+	api := httpapi.New(userService, emailVerificationService)
 
 	server := &http.Server{
 		Addr:              cfg.HTTP.Address,

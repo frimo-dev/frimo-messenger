@@ -7,8 +7,9 @@ import (
 )
 
 type Config struct {
-	HTTP HTTPConfig
-	Database DatabaseConfig
+	HTTP                      HTTPConfig
+	Database                  DatabaseConfig
+	VerificationTokenLifetime time.Duration
 }
 
 type DatabaseConfig struct {
@@ -39,6 +40,7 @@ func Load() (Config, error) {
 		Database: DatabaseConfig{
 			URL: os.Getenv("DATABASE_URL"),
 		},
+		VerificationTokenLifetime: 30 * time.Minute,
 	}
 
 	if cfg.HTTP.Address == "" {

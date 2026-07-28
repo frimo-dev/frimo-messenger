@@ -10,7 +10,7 @@ type User struct {
 	CreatedAt time.Time
 }
 
-type RegisterInput struct {
+type RegistrationInput struct {
 	Email    string
 	Password string
 }
