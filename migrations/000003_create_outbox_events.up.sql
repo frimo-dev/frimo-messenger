@@ -17,7 +17,7 @@ CREATE TABLE outbox_events (
 		CHECK (attempts >= 0),
 
 	CONSTRAINT outbox_events_payload_object
-		CHECK (jsonb_typeof(payload) = 'object'),
+		CHECK (jsonb_typeof(payload) = 'object')
 );
 
 CREATE INDEX outbox_events_pending_idx
