@@ -4,7 +4,8 @@ CREATE TABLE email_verifications (
 	token_hash BYTEA NOT NULL UNIQUE,
 	expires_at TIMESTAMPTZ NOT NULL,
 	used_at TIMESTAMPTZ,
-	created_at TIMESTAMPTZ NOT NULL
+	created_at TIMESTAMPTZ NOT NULL,
+    token_ciphertext BYTEA NOT NULL
 );
 
 CREATE INDEX email_verifications_user_id_idx ON email_verifications (user_id)
