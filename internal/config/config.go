@@ -10,6 +10,7 @@ type Config struct {
 	HTTP     HTTPConfig
 	Database DatabaseConfig
 	App      AppConfig
+	Verification VerificationConfig
 
 	VerificationTokenLifetime time.Duration
 }
@@ -20,6 +21,10 @@ type AppConfig struct {
 
 type DatabaseConfig struct {
 	URL string
+}
+
+type VerificationConfig struct {
+	EncryptionKey string
 }
 
 type HTTPConfig struct {
@@ -49,6 +54,11 @@ func Load() (Config, error) {
 		App: AppConfig{
 			BaseUrl: getEnv("APP_BASE_URL", "http://localhost:8080"),
 		},
+		Verification: VerificationConfig{
+			EncryptionKey: os.Getenv(
+				"VERIFICATION_TOKEN_ENCRYPTION_KEY",
+			),
+		},
 		VerificationTokenLifetime: 30 * time.Minute,
 	}
 
@@ -62,6 +72,12 @@ func Load() (Config, error) {
 
 	if cfg.App.BaseUrl == "" {
 		return Config{}, fmt.Errorf("APP_BASE_URL must not be empty")
+	}
+
+	if cfg.Verification.EncryptionKey == "" {
+		return Config{}, fmt.Errorf(
+			"VERIFICATION_TOKEN_ENCRYPTION_KEY is required",
+		)
 	}
 
 	return cfg, nil
