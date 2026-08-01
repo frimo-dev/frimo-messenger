@@ -32,5 +32,6 @@ func (a *API) Handler() http.Handler {
 func (a *API) registerRoutes() {
 	a.mux.HandleFunc("GET /health", a.health)
 	a.mux.HandleFunc("POST /auth/register", a.registerUser)
-	a.mux.HandleFunc("POST /auth/verify-email", a.verifyEmail)
+	// TODO: формально GET здесь не подходит, так как меняется состояние при подтверждении email
+	a.mux.HandleFunc("GET /auth/verify-email", a.verifyEmail)
 }

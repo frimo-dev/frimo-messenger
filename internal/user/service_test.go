@@ -64,6 +64,34 @@ func (r *spyUserRepository) Create(
 	return r.createdUser, nil
 }
 
+type stubTokenCipher struct {
+	receivedPlaintext      []byte
+	receivedAdditionalData []byte
+	ciphertext             []byte
+	err                    error
+}
+
+func (c *stubTokenCipher) Encrypt(
+	plaintext []byte,
+	additionalData []byte,
+) ([]byte, error) {
+	c.receivedPlaintext = append(
+		[]byte(nil),
+		plaintext...,
+	)
+
+	c.receivedAdditionalData = append(
+		[]byte(nil),
+		additionalData...,
+	)
+
+	if c.err != nil {
+		return nil, c.err
+	}
+
+	return append([]byte(nil), c.ciphertext...), nil
+}
+
 // TODO: разделить тест на много маленьких
 func TestServiceRegisterCreatesUserAndVerificationToken(t *testing.T) {
 	now := time.Date(
@@ -94,15 +122,20 @@ func TestServiceRegisterCreatesUserAndVerificationToken(t *testing.T) {
 		tokenHash: []byte("verification-token-hash"),
 	}
 
+	tokenCipher := &stubTokenCipher{
+		ciphertext: []byte("encrypted-token"),
+	}
+
 	service := user.NewService(
 		repository,
 		passwordHasher,
 		tokenGenerator,
+		tokenCipher,
 		func() time.Time { return now },
 		time.Minute*30,
 	)
 
-	result, err := service.Register(
+	user, err := service.Register(
 		context.Background(),
 		user.RegistrationInput{
 			Email:    "  Misha@Example.com  ",
@@ -172,19 +205,11 @@ func TestServiceRegisterCreatesUserAndVerificationToken(t *testing.T) {
 		t.Fatal("expected generated verification ID")
 	}
 
-	if result.User.ID != "user-id" {
+	if user.ID != "user-id" {
 		t.Fatalf(
 			"expected user ID %q, got %q",
 			"user-id",
-			result.User.ID,
-		)
-	}
-
-	if result.RawVerificationToken != "raw-verification-token" {
-		t.Fatalf(
-			"expected raw token %q, got %q",
-			"raw-verification-token",
-			result.RawVerificationToken,
+			user.ID,
 		)
 	}
 

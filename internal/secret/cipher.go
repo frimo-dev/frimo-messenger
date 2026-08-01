@@ -72,9 +72,8 @@ func (c *Cipher) Decrypt(value []byte, additionalData []byte) ([]byte, error) {
 	ciphertext := value[nonceSize:]
 
 	plaintext, err := c.aead.Open(nil, nonce, ciphertext, additionalData)
-
 	if err != nil {
-		return nil, errors.New("decrypt or authenticate encrypted value")
+		return nil, fmt.Errorf("decrypt or authenticate encrypted value: %w", err)
 	}
 
 	return plaintext, nil

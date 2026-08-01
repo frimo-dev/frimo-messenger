@@ -2,12 +2,15 @@ package user
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/mail"
 	"strings"
 	"time"
 	"unicode/utf8"
 
+	"github.com/frimo-dev/frimo-messenger/internal/events"
+	"github.com/frimo-dev/frimo-messenger/internal/outbox"
 	"github.com/google/uuid"
 )
 
@@ -19,73 +22,99 @@ type VerificationTokenGenerator interface {
 	Generate() (rawToken string, tokenHash []byte, err error)
 }
 
-type RegistrationResult struct {
-	User                 User
-	RawVerificationToken string
+type VerificationTokenCipher interface {
+	Encrypt(plaintext []byte, additionalData []byte) ([]byte, error)
 }
 
 type Service struct {
 	repository                Repository
 	passwordHasher            PasswordHasher
 	tokenGenerator            VerificationTokenGenerator
+	tokenCipher               VerificationTokenCipher
 	now                       func() time.Time
 	verificationTokenLifetime time.Duration
 }
 
-func NewService(repository Repository, passwordHasher PasswordHasher, tokenGenerator VerificationTokenGenerator, now func() time.Time, verificationTokenLifetime time.Duration) *Service {
+func NewService(repository Repository, passwordHasher PasswordHasher, tokenGenerator VerificationTokenGenerator, tokenCipher VerificationTokenCipher, now func() time.Time, verificationTokenLifetime time.Duration) *Service {
 	return &Service{
 		repository:                repository,
 		passwordHasher:            passwordHasher,
 		tokenGenerator:            tokenGenerator,
+		tokenCipher:               tokenCipher,
 		now:                       now,
 		verificationTokenLifetime: verificationTokenLifetime,
 	}
 }
 
-func (s *Service) Register(ctx context.Context, input RegistrationInput) (RegistrationResult, error) {
+func (s *Service) Register(ctx context.Context, input RegistrationInput) (User, error) {
 	email := normalizeEmail(input.Email)
 
 	if err := validateEmail(email); err != nil {
-		return RegistrationResult{}, err
+		return User{}, err
 	}
 
 	if err := validatePassword(input.Password); err != nil {
-		return RegistrationResult{}, err
+		return User{}, err
 	}
 
 	passwordHash, err := s.passwordHasher.Hash(input.Password)
 	if err != nil {
-		return RegistrationResult{}, fmt.Errorf("hash password: %w", err)
+		return User{}, fmt.Errorf("hash password: %w", err)
 	}
 
 	rawToken, tokenHash, err := s.tokenGenerator.Generate()
 	if err != nil {
-		return RegistrationResult{}, fmt.Errorf("generate verification token: %w", err)
+		return User{}, fmt.Errorf("generate verification token: %w", err)
 	}
 
 	now := s.now().UTC()
+	userID := uuid.NewString()
+	verificationID := uuid.NewString()
 
-	createdUser, err := s.repository.Create(
-		ctx,
-		CreationInput{
-			ID:                    uuid.NewString(),
-			Email:                 email,
-			PasswordHash:          passwordHash,
-			VerificationID:        uuid.NewString(),
-			VerificationTokenHash: tokenHash,
-			VerificationExpiresAt: now.Add(s.verificationTokenLifetime),
-			CreatedAt:             now,
+	tokenCiphertext, err := s.tokenCipher.Encrypt([]byte(rawToken), []byte(verificationID))
+	if err != nil {
+		return User{}, fmt.Errorf("encrypt verification token: %w", err)
+	}
+
+	eventPayload, err := json.Marshal(
+		events.EmailVerificationRequested{
+			VerificationID: verificationID,
+			Recipient:      email,
 		},
 	)
 
 	if err != nil {
-		return RegistrationResult{}, err
+		return User{}, fmt.Errorf("marshal verification event: %w", err)
 	}
 
-	return RegistrationResult{
-		User:                 createdUser,
-		RawVerificationToken: rawToken,
-	}, nil
+	createdUser, err := s.repository.Create(
+		ctx,
+		CreationInput{
+			ID:           userID,
+			Email:        email,
+			PasswordHash: passwordHash,
+			CreatedAt:    now,
+
+			VerificationID:              verificationID,
+			VerificationTokenHash:       tokenHash,
+			VerificationTokenCiphertext: tokenCiphertext,
+			VerificationExpiresAt:       now.Add(s.verificationTokenLifetime),
+
+			OutboxEvent: outbox.Event{
+				ID:          uuid.NewString(),
+				Type:        events.EmailVerificationRequestedType,
+				Payload:     eventPayload,
+				CreatedAt:   now,
+				AvailableAt: now,
+			},
+		},
+	)
+
+	if err != nil {
+		return User{}, err
+	}
+
+	return createdUser, nil
 }
 
 func normalizeEmail(email string) string {

@@ -60,7 +60,9 @@ func (r *EmailVerificationRepository) Confirm(ctx context.Context, tokenHash []b
 
 	const updateVerificationQuery = `
 		UPDATE email_verifications
-		SET used_at = $1
+		SET
+			used_at = $1,
+			token_ciphertext = NULL
 		WHERE token_hash = $2`
 
 	if _, err := tx.Exec(ctx, updateVerificationQuery, confirmedAt, tokenHash); err != nil {
@@ -72,6 +74,33 @@ func (r *EmailVerificationRepository) Confirm(ctx context.Context, tokenHash []b
 	}
 
 	return nil
+}
+
+func (r *EmailVerificationRepository) GetForDelivery(ctx context.Context, verificationID string) (emailverification.DeliveryData, error) {
+	const query = `
+		SELECT
+			id,
+			token_ciphertext,
+			expires_at,
+			used_at
+		FROM email_verifications
+		WHERE id = $1
+	`
+	var data emailverification.DeliveryData
+
+	err := r.pool.QueryRow(ctx, query, verificationID).Scan(&data.ID, &data.TokenCiphertext, &data.ExpiresAt, &data.UsedAt)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return emailverification.DeliveryData{}, emailverification.ErrDeliveryNotFound
+		}
+		return emailverification.DeliveryData{}, fmt.Errorf("get email verification for delivery: %w", err)
+	}
+
+	if data.UsedAt != nil || len(data.TokenCiphertext) == 0 {
+		return emailverification.DeliveryData{}, emailverification.ErrDeliveryInactive
+	}
+
+	return data, nil
 }
 
 var _ emailverification.Repository = (*EmailVerificationRepository)(nil)

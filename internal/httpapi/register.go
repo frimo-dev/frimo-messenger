@@ -6,7 +6,6 @@ import (
 	"io"
 	"log"
 	"net/http"
-	"net/url"
 	"strings"
 
 	"github.com/frimo-dev/frimo-messenger/internal/user"
@@ -32,12 +31,13 @@ func (a *API) registerUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result, err := a.userService.Register(r.Context(), user.RegistrationInput{
+	createdUser, err := a.userService.Register(r.Context(), user.RegistrationInput{
 		Email:    request.Email,
 		Password: request.Password,
 	})
 
 	if err != nil {
+		log.Printf("registerUser: %v", err)
 		var validationErr *user.ValidationError
 
 		switch {
@@ -69,17 +69,9 @@ func (a *API) registerUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	verificationURL := "http://localhost:8080/auth/verify-email?token=" + url.QueryEscape(result.RawVerificationToken)
-
-	log.Printf(
-		"development verification URL for %s: %s",
-		result.User.Email,
-		verificationURL,
-	)
-
-	writeJSON(w, http.StatusCreated, registerResponse{
-		ID:    result.User.ID,
-		Email: result.User.Email,
+	writeJSON(w, http.StatusAccepted, registerResponse{
+		ID:    createdUser.ID,
+		Email: createdUser.Email,
 	})
 }
 

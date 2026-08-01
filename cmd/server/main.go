@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"log"
 	"net/http"
@@ -15,6 +16,7 @@ import (
 	"github.com/frimo-dev/frimo-messenger/internal/httpapi"
 	"github.com/frimo-dev/frimo-messenger/internal/password"
 	"github.com/frimo-dev/frimo-messenger/internal/postgres"
+	"github.com/frimo-dev/frimo-messenger/internal/secret"
 	"github.com/frimo-dev/frimo-messenger/internal/token"
 	"github.com/frimo-dev/frimo-messenger/internal/user"
 )
@@ -33,15 +35,34 @@ func main() {
 	if err != nil {
 		log.Fatalf("open database: %v", err)
 	}
-
 	defer databasePool.Close()
-
 	log.Println("database connection established")
+
+	encryptionKey, err := base64.StdEncoding.DecodeString(
+		cfg.Verification.EncryptionKey,
+	)
+	if err != nil {
+		log.Fatalf(
+			"decode verification encryption key: %v",
+			err,
+		)
+	}
+
+	verificationTokenCipher, err := secret.NewCipher(
+		encryptionKey,
+	)
+	if err != nil {
+		log.Fatalf(
+			"create verification token cipher: %v",
+			err,
+		)
+	}
 
 	userRepository := postgres.NewUserRepository(databasePool)
 	passwordHasher := password.NewArgon2Hasher()
 	tokenGenerator := token.NewGenerator()
-	userService := user.NewService(userRepository, passwordHasher, tokenGenerator, time.Now, cfg.VerificationTokenLifetime)
+
+	userService := user.NewService(userRepository, passwordHasher, tokenGenerator, verificationTokenCipher, time.Now, cfg.VerificationTokenLifetime)
 
 	emailVerificationRepository := postgres.NewEmailVerificationRepository(databasePool)
 	emailVerificationService := emailverification.NewService(emailVerificationRepository, time.Now)

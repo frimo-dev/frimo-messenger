@@ -17,17 +17,20 @@ type verifyEmailResponse struct {
 }
 
 func (a *API) verifyEmail(w http.ResponseWriter, r *http.Request) {
-	var request verifyEmailRequest
+	rawToken := r.URL.Query().Get("token")
 
-	if err := decodeJSON(w, r, &request); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+	if rawToken == "" {
+		http.Error(
+			w,
+			"verification token is required",
+			http.StatusBadRequest,
+		)
 		return
 	}
 
-	err := a.emailVerificationService.Confirm(r.Context(), request.Token)
-	log.Printf("%v", err)
-
+	err := a.emailVerificationService.Confirm(r.Context(), rawToken)
 	if err != nil {
+		log.Println(err)
 		switch {
 		case errors.Is(err, emailverification.ErrInvalidToken):
 			writeError(w, http.StatusBadRequest, "invalid_verification_token", "verification token is invalid")
