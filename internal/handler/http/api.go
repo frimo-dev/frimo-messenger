@@ -1,10 +1,10 @@
-package httpapi
+package http
 
 import (
 	"net/http"
 
-	"github.com/frimo-dev/frimo-messenger/internal/emailverification"
-	"github.com/frimo-dev/frimo-messenger/internal/user"
+	"github.com/frimo-dev/frimo-messenger/internal/service/emailverification"
+	"github.com/frimo-dev/frimo-messenger/internal/service/user"
 )
 
 type API struct {

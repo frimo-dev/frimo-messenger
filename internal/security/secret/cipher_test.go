@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"testing"
 
-	"github.com/frimo-dev/frimo-messenger/internal/secret"
+	"github.com/frimo-dev/frimo-messenger/internal/security/secret"
 )
 
 func TestCipherEncryptsAndDecryptsValue(t *testing.T) {

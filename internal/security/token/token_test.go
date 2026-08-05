@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"testing"
 
-	"github.com/frimo-dev/frimo-messenger/internal/token"
+	"github.com/frimo-dev/frimo-messenger/internal/security/token"
 )
 
 func TestGeneratorCreatesDifferentTokens(t *testing.T) {

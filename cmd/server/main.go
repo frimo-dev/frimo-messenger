@@ -12,13 +12,13 @@ import (
 	"time"
 
 	"github.com/frimo-dev/frimo-messenger/internal/config"
-	"github.com/frimo-dev/frimo-messenger/internal/emailverification"
-	"github.com/frimo-dev/frimo-messenger/internal/httpapi"
-	"github.com/frimo-dev/frimo-messenger/internal/password"
+	http2 "github.com/frimo-dev/frimo-messenger/internal/handler/http"
 	"github.com/frimo-dev/frimo-messenger/internal/postgres"
-	"github.com/frimo-dev/frimo-messenger/internal/secret"
-	"github.com/frimo-dev/frimo-messenger/internal/token"
-	"github.com/frimo-dev/frimo-messenger/internal/user"
+	"github.com/frimo-dev/frimo-messenger/internal/security/password"
+	"github.com/frimo-dev/frimo-messenger/internal/security/secret"
+	"github.com/frimo-dev/frimo-messenger/internal/security/token"
+	"github.com/frimo-dev/frimo-messenger/internal/service/emailverification"
+	"github.com/frimo-dev/frimo-messenger/internal/service/user"
 )
 
 func main() {
@@ -67,7 +67,7 @@ func main() {
 	emailVerificationRepository := postgres.NewEmailVerificationRepository(databasePool)
 	emailVerificationService := emailverification.NewService(emailVerificationRepository, time.Now)
 
-	api := httpapi.New(userService, emailVerificationService)
+	api := http2.New(userService, emailVerificationService)
 
 	server := &http.Server{
 		Addr:              cfg.HTTP.Address,

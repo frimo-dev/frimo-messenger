@@ -1,4 +1,4 @@
-package httpapi
+package http
 
 import (
 	"encoding/json"
@@ -8,7 +8,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/frimo-dev/frimo-messenger/internal/user"
+	user2 "github.com/frimo-dev/frimo-messenger/internal/service/user"
 )
 
 const maxRegisterBodySize = 16 * 1024
@@ -31,14 +31,14 @@ func (a *API) registerUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	createdUser, err := a.userService.Register(r.Context(), user.RegistrationInput{
+	createdUser, err := a.userService.Register(r.Context(), user2.RegistrationInput{
 		Email:    request.Email,
 		Password: request.Password,
 	})
 
 	if err != nil {
 		log.Printf("registerUser: %v", err)
-		var validationErr *user.ValidationError
+		var validationErr *user2.ValidationError
 
 		switch {
 		case errors.As(err, &validationErr):
@@ -49,7 +49,7 @@ func (a *API) registerUser(w http.ResponseWriter, r *http.Request) {
 				validationErr.Message,
 			)
 
-		case errors.Is(err, user.ErrEmailAlreadyExists):
+		case errors.Is(err, user2.ErrEmailAlreadyExists):
 			writeError(
 				w,
 				http.StatusConflict,

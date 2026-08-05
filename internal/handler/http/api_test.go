@@ -1,4 +1,4 @@
-package httpapi
+package http
 
 //func newTestAPI() *API {
 //	repository := user.NewMemoryRepository()

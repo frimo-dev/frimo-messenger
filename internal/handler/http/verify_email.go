@@ -1,11 +1,11 @@
-package httpapi
+package http
 
 import (
 	"errors"
 	"log"
 	"net/http"
 
-	"github.com/frimo-dev/frimo-messenger/internal/emailverification"
+	"github.com/frimo-dev/frimo-messenger/internal/service/emailverification"
 )
 
 type verifyEmailRequest struct {

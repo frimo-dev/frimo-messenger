@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/frimo-dev/frimo-messenger/internal/token"
+	"github.com/frimo-dev/frimo-messenger/internal/security/token"
 )
 
 type Service struct {

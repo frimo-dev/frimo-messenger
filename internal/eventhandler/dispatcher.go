@@ -10,9 +10,9 @@ import (
 	"time"
 
 	"github.com/frimo-dev/frimo-messenger/internal/email"
-	"github.com/frimo-dev/frimo-messenger/internal/emailverification"
 	"github.com/frimo-dev/frimo-messenger/internal/events"
 	"github.com/frimo-dev/frimo-messenger/internal/outbox"
+	"github.com/frimo-dev/frimo-messenger/internal/service/emailverification"
 )
 
 type TokenCipher interface {

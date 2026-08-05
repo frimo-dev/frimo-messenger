@@ -14,7 +14,7 @@ import (
 	"github.com/frimo-dev/frimo-messenger/internal/eventhandler"
 	"github.com/frimo-dev/frimo-messenger/internal/outbox"
 	"github.com/frimo-dev/frimo-messenger/internal/postgres"
-	"github.com/frimo-dev/frimo-messenger/internal/secret"
+	"github.com/frimo-dev/frimo-messenger/internal/security/secret"
 )
 
 func main() {

@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/frimo-dev/frimo-messenger/internal/emailverification"
+	emailverification2 "github.com/frimo-dev/frimo-messenger/internal/service/emailverification"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -44,18 +44,18 @@ func (r *EmailVerificationRepository) Confirm(ctx context.Context, tokenHash []b
 
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return emailverification.ErrInvalidToken
+			return emailverification2.ErrInvalidToken
 		}
 
 		return fmt.Errorf("select verification token: %w", err)
 	}
 
 	if usedAt != nil {
-		return emailverification.ErrUsedToken
+		return emailverification2.ErrUsedToken
 	}
 
 	if !confirmedAt.Before(expiresAt) {
-		return emailverification.ErrExpiredToken
+		return emailverification2.ErrExpiredToken
 	}
 
 	const updateVerificationQuery = `
@@ -76,7 +76,7 @@ func (r *EmailVerificationRepository) Confirm(ctx context.Context, tokenHash []b
 	return nil
 }
 
-func (r *EmailVerificationRepository) GetForDelivery(ctx context.Context, verificationID string) (emailverification.DeliveryData, error) {
+func (r *EmailVerificationRepository) GetForDelivery(ctx context.Context, verificationID string) (emailverification2.DeliveryData, error) {
 	const query = `
 		SELECT
 			id,
@@ -86,21 +86,21 @@ func (r *EmailVerificationRepository) GetForDelivery(ctx context.Context, verifi
 		FROM email_verifications
 		WHERE id = $1
 	`
-	var data emailverification.DeliveryData
+	var data emailverification2.DeliveryData
 
 	err := r.pool.QueryRow(ctx, query, verificationID).Scan(&data.ID, &data.TokenCiphertext, &data.ExpiresAt, &data.UsedAt)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return emailverification.DeliveryData{}, emailverification.ErrDeliveryNotFound
+			return emailverification2.DeliveryData{}, emailverification2.ErrDeliveryNotFound
 		}
-		return emailverification.DeliveryData{}, fmt.Errorf("get email verification for delivery: %w", err)
+		return emailverification2.DeliveryData{}, fmt.Errorf("get email verification for delivery: %w", err)
 	}
 
 	if data.UsedAt != nil || len(data.TokenCiphertext) == 0 {
-		return emailverification.DeliveryData{}, emailverification.ErrDeliveryInactive
+		return emailverification2.DeliveryData{}, emailverification2.ErrDeliveryInactive
 	}
 
 	return data, nil
 }
 
-var _ emailverification.Repository = (*EmailVerificationRepository)(nil)
+var _ emailverification2.Repository = (*EmailVerificationRepository)(nil)

@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/frimo-dev/frimo-messenger/internal/emailverification"
-	"github.com/frimo-dev/frimo-messenger/internal/token"
+	"github.com/frimo-dev/frimo-messenger/internal/security/token"
+	"github.com/frimo-dev/frimo-messenger/internal/service/emailverification"
 )
 
 type spyRepository struct {

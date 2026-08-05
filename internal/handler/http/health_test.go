@@ -1,4 +1,4 @@
-package httpapi
+package http
 
 //func TestHealthHandler(t *testing.T) {
 //	api := newTestAPI()
