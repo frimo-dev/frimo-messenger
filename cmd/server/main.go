@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/base64"
 	"errors"
-	"log"
 	"net/http"
 	"os"
 	"os/signal"
@@ -19,13 +18,18 @@ import (
 	"github.com/frimo-dev/frimo-messenger/internal/security/token"
 	"github.com/frimo-dev/frimo-messenger/internal/service/emailverification"
 	"github.com/frimo-dev/frimo-messenger/internal/service/user"
+	"go.uber.org/zap"
 )
 
 func main() {
-	cfg, err := config.Load()
-
+	logger, err := zap.NewProduction()
 	if err != nil {
-		log.Fatalf("load config: %v", err)
+		panic(err)
+	}
+
+	cfg, err := config.Load()
+	if err != nil {
+		logger.Fatal("failed config loading", zap.Error(err))
 	}
 
 	databaseContext, cancelDatabase := context.WithTimeout(context.Background(), 5*time.Second)
@@ -33,41 +37,31 @@ func main() {
 	cancelDatabase()
 
 	if err != nil {
-		log.Fatalf("open database: %v", err)
+		logger.Fatal("failed open database", zap.Error(err))
 	}
+
 	defer databasePool.Close()
-	log.Println("database connection established")
+	logger.Info("database connection established")
 
-	encryptionKey, err := base64.StdEncoding.DecodeString(
-		cfg.Verification.EncryptionKey,
-	)
+	encryptionKey, err := base64.StdEncoding.DecodeString(cfg.Verification.EncryptionKey)
 	if err != nil {
-		log.Fatalf(
-			"decode verification encryption key: %v",
-			err,
-		)
+		logger.Fatal("failed decode verification encryption key", zap.Error(err))
 	}
 
-	verificationTokenCipher, err := secret.NewCipher(
-		encryptionKey,
-	)
+	verificationTokenCipher, err := secret.NewCipher(encryptionKey)
 	if err != nil {
-		log.Fatalf(
-			"create verification token cipher: %v",
-			err,
-		)
+		logger.Fatal("failed creation verification token cipher", zap.Error(err))
 	}
 
 	userRepository := postgres.NewUserRepository(databasePool)
 	passwordHasher := password.NewArgon2Hasher()
 	tokenGenerator := token.NewGenerator()
-
 	userService := user.NewService(userRepository, passwordHasher, tokenGenerator, verificationTokenCipher, time.Now, cfg.VerificationTokenLifetime)
 
 	emailVerificationRepository := postgres.NewEmailVerificationRepository(databasePool)
 	emailVerificationService := emailverification.NewService(emailVerificationRepository, time.Now)
 
-	api := http2.New(userService, emailVerificationService)
+	api := http2.New(logger, userService, emailVerificationService)
 
 	server := &http.Server{
 		Addr:              cfg.HTTP.Address,
@@ -78,17 +72,13 @@ func main() {
 		IdleTimeout:       cfg.HTTP.IdleTimeout,
 	}
 
-	ctx, stop := signal.NotifyContext(
-		context.Background(),
-		os.Interrupt,
-		syscall.SIGTERM,
-	)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
 	serverError := make(chan error, 1)
 
 	go func() {
-		log.Printf("Server is listening on: %s", server.Addr)
+		logger.Info("Server is listening", zap.String("port", server.Addr))
 
 		err := server.ListenAndServe()
 		if err != nil && !errors.Is(err, http.ErrServerClosed) {
@@ -98,19 +88,19 @@ func main() {
 
 	select {
 	case err := <-serverError:
-		log.Fatalf("server failed: %v", err)
+		logger.Fatal("server failed", zap.Error(err))
 	case <-ctx.Done():
-		log.Println("shutdown signal received")
+		logger.Info("shutdown signal received")
 	}
 
 	shutdownContext, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
 	if err := server.Shutdown(shutdownContext); err != nil {
-		log.Printf("graceful shutdown failed: %v", err)
+		logger.Error("failed graceful shutdown failed", zap.Error(err))
 
 		if closeErr := server.Close(); closeErr != nil {
-			log.Printf("forced server close failed: %v", closeErr)
+			logger.Error("failed forced server close failed", zap.Error(closeErr))
 		}
 	}
 }

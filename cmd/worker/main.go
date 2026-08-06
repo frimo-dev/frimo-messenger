@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"encoding/base64"
-	"log/slog"
 	"os"
 	"os/signal"
 	"syscall"
@@ -15,15 +14,19 @@ import (
 	"github.com/frimo-dev/frimo-messenger/internal/outbox"
 	"github.com/frimo-dev/frimo-messenger/internal/postgres"
 	"github.com/frimo-dev/frimo-messenger/internal/security/secret"
+	"go.uber.org/zap"
 )
 
 func main() {
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	logger, err := zap.NewProduction()
+	if err != nil {
+		panic(err)
+	}
+	defer logger.Sync()
 
 	cfg, err := config.Load()
 	if err != nil {
-		logger.Error("load config", "error", err)
-		os.Exit(1)
+		logger.Fatal("failed config loading", zap.Error(err))
 	}
 
 	rootContext, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -34,27 +37,18 @@ func main() {
 	cancelDatabase()
 
 	if err != nil {
-		logger.Error("open database", "error", err)
-		os.Exit(1)
+		logger.Fatal("failed open database", zap.Error(err))
 	}
 	defer databasePool.Close()
 
 	encryptionKey, err := base64.StdEncoding.DecodeString(cfg.Verification.EncryptionKey)
 	if err != nil {
-		logger.Error(
-			"decode verification encryption key",
-			"error", err,
-		)
-		os.Exit(1)
+		logger.Fatal("failed decode verification encryption key", zap.Error(err))
 	}
 
 	tokenCipher, err := secret.NewCipher(encryptionKey)
 	if err != nil {
-		logger.Error(
-			"create verification token cipher",
-			"error", err,
-		)
-		os.Exit(1)
+		logger.Fatal("failed creation verification token cipher", zap.Error(err))
 	}
 
 	emailSender := email.NewLogSender(logger)
@@ -81,8 +75,7 @@ func main() {
 	logger.Info("worker started")
 
 	if err := processor.Run(rootContext); err != nil {
-		logger.Error("worker failed", "error", err)
-		os.Exit(1)
+		logger.Fatal("worker failed", zap.Error(err))
 	}
 
 	logger.Info("worker stopped")

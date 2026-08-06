@@ -2,10 +2,10 @@ package http
 
 import (
 	"errors"
-	"log"
 	"net/http"
 
 	"github.com/frimo-dev/frimo-messenger/internal/service/emailverification"
+	"go.uber.org/zap"
 )
 
 type verifyEmailRequest struct {
@@ -30,7 +30,6 @@ func (a *API) verifyEmail(w http.ResponseWriter, r *http.Request) {
 
 	err := a.emailVerificationService.Confirm(r.Context(), rawToken)
 	if err != nil {
-		log.Println(err)
 		switch {
 		case errors.Is(err, emailverification.ErrInvalidToken):
 			writeError(w, http.StatusBadRequest, "invalid_verification_token", "verification token is invalid")
@@ -39,6 +38,7 @@ func (a *API) verifyEmail(w http.ResponseWriter, r *http.Request) {
 		case errors.Is(err, emailverification.ErrUsedToken):
 			writeError(w, http.StatusConflict, "verification_token_used", "verification token has already been used")
 		default:
+			a.logger.Error("failed to verify email", zap.Error(err))
 			writeError(w, http.StatusInternalServerError, "internal_error", "internal server error")
 		}
 		return

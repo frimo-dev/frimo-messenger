@@ -2,14 +2,15 @@ package email
 
 import (
 	"context"
-	"log/slog"
+
+	"go.uber.org/zap"
 )
 
 type LogSender struct {
-	logger *slog.Logger
+	logger *zap.Logger
 }
 
-func NewLogSender(logger *slog.Logger) *LogSender {
+func NewLogSender(logger *zap.Logger) *LogSender {
 	return &LogSender{
 		logger: logger,
 	}
@@ -18,8 +19,8 @@ func NewLogSender(logger *slog.Logger) *LogSender {
 func (ls *LogSender) SendVerification(ctx context.Context, message VerificationMessage) error {
 	ls.logger.Warn(
 		"development email verification message",
-		"recipient", message.Recipient,
-		"verification_url", message.VerificationURL,
+		zap.String("recipient", message.Recipient),
+		zap.String("verification_url", message.VerificationURL),
 	)
 	return nil
 }

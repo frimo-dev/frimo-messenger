@@ -5,19 +5,24 @@ import (
 
 	"github.com/frimo-dev/frimo-messenger/internal/service/emailverification"
 	"github.com/frimo-dev/frimo-messenger/internal/service/user"
+	"go.uber.org/zap"
 )
 
 type API struct {
-	mux                      *http.ServeMux
+	mux *http.ServeMux
+
 	userService              *user.Service
 	emailVerificationService *emailverification.Service
+
+	logger *zap.Logger
 }
 
-func New(userService *user.Service, emailVerificationService *emailverification.Service) *API {
+func New(logger *zap.Logger, userService *user.Service, emailVerificationService *emailverification.Service) *API {
 	api := &API{
 		mux:                      http.NewServeMux(),
 		userService:              userService,
 		emailVerificationService: emailVerificationService,
+		logger:                   logger,
 	}
 
 	api.registerRoutes()

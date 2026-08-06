@@ -3,8 +3,9 @@ package outbox
 import (
 	"context"
 	"errors"
-	"log/slog"
 	"time"
+
+	"go.uber.org/zap"
 )
 
 type Handler interface {
@@ -16,7 +17,7 @@ type Clock func() time.Time
 type Processor struct {
 	repository Repository
 	handler    Handler
-	logger     *slog.Logger
+	logger     *zap.Logger
 
 	pollInterval time.Duration
 	lockLease    time.Duration
@@ -24,7 +25,7 @@ type Processor struct {
 	now          Clock
 }
 
-func NewProcessor(repository Repository, handler Handler, logger *slog.Logger, now Clock) *Processor {
+func NewProcessor(repository Repository, handler Handler, logger *zap.Logger, now Clock) *Processor {
 	if now == nil {
 		now = time.Now
 	}
@@ -51,7 +52,7 @@ func (p *Processor) Run(ctx context.Context) error {
 		case <-timer.C:
 			processed, err := p.processOne(ctx)
 			if err != nil {
-				p.logger.Error("process outbox event", "error", err)
+				p.logger.Error("process outbox event", zap.Error(err))
 			}
 
 			if processed {
@@ -85,10 +86,10 @@ func (p *Processor) processOne(ctx context.Context) (bool, error) {
 
 			p.logger.Error(
 				"outbox event permanently failed",
-				"event_id", event.ID,
-				"event_type", event.Type,
-				"attempts", event.Attempts,
-				"error", handleErr,
+				zap.String("event_id", event.ID),
+				zap.String("event_type", event.Type),
+				zap.Int("attempts", event.Attempts),
+				zap.Error(handleErr),
 			)
 
 			return true, nil

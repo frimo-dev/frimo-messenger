@@ -1,0 +1,16 @@
+package http
+
+import "context"
+
+type contextKey string
+
+const requestIDKey contextKey = "request_id"
+
+func withRequestID(ctx context.Context, requestID string) context.Context {
+	return context.WithValue(ctx, requestIDKey, requestID)
+}
+
+func requestIDFromContext(ctx context.Context) string {
+	requestID, _ := ctx.Value(requestIDKey).(string)
+	return requestID
+}
