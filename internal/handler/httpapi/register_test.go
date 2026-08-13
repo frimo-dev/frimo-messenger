@@ -1,4 +1,4 @@
-package http
+package httpapi
 
 //func TestRegisterUser(t *testing.T) {
 //	api := newTestAPI()
@@ -9,7 +9,7 @@ package http
 //	}`)
 //
 //	request := httptest.NewRequest(
-//		http.MethodPost,
+//		httpapi.MethodPost,
 //		"/auth/register",
 //		bytes.NewReader(body),
 //	)
@@ -23,10 +23,10 @@ package http
 //	response := recorder.Result()
 //	defer response.Body.Close()
 //
-//	if response.StatusCode != http.StatusCreated {
+//	if response.StatusCode != httpapi.StatusCreated {
 //		t.Fatalf(
 //			"expected status %d, got %d",
-//			http.StatusCreated,
+//			httpapi.StatusCreated,
 //			response.StatusCode,
 //		)
 //	}
@@ -59,7 +59,7 @@ package http
 //	}`)
 //
 //	firstRequest := httptest.NewRequest(
-//		http.MethodPost,
+//		httpapi.MethodPost,
 //		"/auth/register",
 //		bytes.NewReader(body),
 //	)
@@ -68,7 +68,7 @@ package http
 //	api.Handler().ServeHTTP(firstRecorder, firstRequest)
 //
 //	secondRequest := httptest.NewRequest(
-//		http.MethodPost,
+//		httpapi.MethodPost,
 //		"/auth/register",
 //		bytes.NewReader(body),
 //	)
@@ -76,10 +76,10 @@ package http
 //	secondRecorder := httptest.NewRecorder()
 //	api.Handler().ServeHTTP(secondRecorder, secondRequest)
 //
-//	if secondRecorder.Code != http.StatusConflict {
+//	if secondRecorder.Code != httpapi.StatusConflict {
 //		t.Fatalf(
 //			"expected status %d, got %d",
-//			http.StatusConflict,
+//			httpapi.StatusConflict,
 //			secondRecorder.Code,
 //		)
 //	}

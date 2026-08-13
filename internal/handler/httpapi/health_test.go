@@ -1,9 +1,9 @@
-package http
+package httpapi
 
 //func TestHealthHandler(t *testing.T) {
 //	api := newTestAPI()
 //
-//	request := httptest.NewRequest(http.MethodGet, "/health", nil)
+//	request := httptest.NewRequest(httpapi.MethodGet, "/health", nil)
 //	recorder := httptest.NewRecorder()
 //
 //	api.Handler().ServeHTTP(recorder, request)
@@ -11,10 +11,10 @@ package http
 //	response := recorder.Result()
 //	defer response.Body.Close()
 //
-//	if response.StatusCode != http.StatusOK {
+//	if response.StatusCode != httpapi.StatusOK {
 //		t.Fatalf(
 //			"expected status %d, got %d",
-//			http.StatusOK,
+//			httpapi.StatusOK,
 //			response.StatusCode,
 //		)
 //	}
