@@ -9,11 +9,11 @@ import (
 	"time"
 
 	"github.com/frimo-dev/frimo-messenger/internal/config"
-	"github.com/frimo-dev/frimo-messenger/internal/email"
-	"github.com/frimo-dev/frimo-messenger/internal/eventhandler"
+	"github.com/frimo-dev/frimo-messenger/internal/handler/event"
 	"github.com/frimo-dev/frimo-messenger/internal/outbox"
 	"github.com/frimo-dev/frimo-messenger/internal/postgres"
 	"github.com/frimo-dev/frimo-messenger/internal/security/secret"
+	"github.com/frimo-dev/frimo-messenger/internal/service/email"
 	"go.uber.org/zap"
 )
 
@@ -55,7 +55,7 @@ func main() {
 
 	verificationRepository := postgres.NewEmailVerificationRepository(databasePool)
 
-	dispatcher := eventhandler.NewDispatcher(
+	dispatcher := event.NewDispatcher(
 		emailSender,
 		verificationRepository,
 		tokenCipher,

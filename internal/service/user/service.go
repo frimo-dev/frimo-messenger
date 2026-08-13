@@ -9,7 +9,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/frimo-dev/frimo-messenger/internal/events"
+	"github.com/frimo-dev/frimo-messenger/internal/dto"
 	"github.com/frimo-dev/frimo-messenger/internal/outbox"
 	"github.com/google/uuid"
 )
@@ -77,7 +77,7 @@ func (s *Service) Register(ctx context.Context, input RegistrationInput) (User, 
 	}
 
 	eventPayload, err := json.Marshal(
-		events.EmailVerificationRequested{
+		dto.EmailVerificationRequested{
 			VerificationID: verificationID,
 			Recipient:      email,
 		},
@@ -102,7 +102,7 @@ func (s *Service) Register(ctx context.Context, input RegistrationInput) (User, 
 
 			OutboxEvent: outbox.Event{
 				ID:          uuid.NewString(),
-				Type:        events.EmailVerificationRequestedType,
+				Type:        dto.EmailVerificationRequestedType,
 				Payload:     eventPayload,
 				CreatedAt:   now,
 				AvailableAt: now,

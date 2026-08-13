@@ -1,4 +1,4 @@
-package events
+package dto
 
 const EmailVerificationRequestedType = "email.verification.requested"
 

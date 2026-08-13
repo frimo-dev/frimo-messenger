@@ -1,4 +1,4 @@
-package eventhandler
+package event
 
 import (
 	"context"
@@ -9,9 +9,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/frimo-dev/frimo-messenger/internal/email"
-	"github.com/frimo-dev/frimo-messenger/internal/events"
+	"github.com/frimo-dev/frimo-messenger/internal/dto"
 	"github.com/frimo-dev/frimo-messenger/internal/outbox"
+	"github.com/frimo-dev/frimo-messenger/internal/service/email"
 	"github.com/frimo-dev/frimo-messenger/internal/service/emailverification"
 )
 
@@ -51,7 +51,7 @@ func NewDispatcher(
 
 func (d *Dispatcher) Handle(ctx context.Context, event outbox.Event) error {
 	switch event.Type {
-	case events.EmailVerificationRequestedType:
+	case dto.EmailVerificationRequestedType:
 		return d.handleEmailVerificationRequested(ctx, event)
 	default:
 		return fmt.Errorf("unsupported event type %q", event.Type)
@@ -59,7 +59,7 @@ func (d *Dispatcher) Handle(ctx context.Context, event outbox.Event) error {
 }
 
 func (d *Dispatcher) handleEmailVerificationRequested(ctx context.Context, event outbox.Event) error {
-	var payload events.EmailVerificationRequested
+	var payload dto.EmailVerificationRequested
 
 	if err := json.Unmarshal(event.Payload, &payload); err != nil {
 		return fmt.Errorf("decode email verification event: %w", err)
