@@ -8,10 +8,6 @@ import (
 	"go.uber.org/zap"
 )
 
-type verifyEmailRequest struct {
-	Token string `json:"token"`
-}
-
 type verifyEmailResponse struct {
 	Status string `json:"status"`
 }
@@ -20,10 +16,12 @@ func (a *API) verifyEmail(w http.ResponseWriter, r *http.Request) {
 	rawToken := r.URL.Query().Get("token")
 
 	if rawToken == "" {
-		http.Error(
+		a.respondError(
+			r.Context(),
 			w,
-			"verification token is required",
 			http.StatusBadRequest,
+			"verification_token_required",
+			"verification token is required",
 		)
 		return
 	}
@@ -32,17 +30,45 @@ func (a *API) verifyEmail(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		switch {
 		case errors.Is(err, emailverification.ErrInvalidToken):
-			writeError(w, http.StatusBadRequest, "invalid_verification_token", "verification token is invalid")
+			a.respondError(
+				r.Context(),
+				w,
+				http.StatusBadRequest,
+				"invalid_verification_token",
+				"verification token is invalid",
+			)
 		case errors.Is(err, emailverification.ErrExpiredToken):
-			writeError(w, http.StatusBadRequest, "verification_token_expired", "verification token has expired")
+			a.respondError(
+				r.Context(),
+				w,
+				http.StatusBadRequest,
+				"verification_token_expired",
+				"verification token has expired",
+			)
 		case errors.Is(err, emailverification.ErrUsedToken):
-			writeError(w, http.StatusConflict, "verification_token_used", "verification token has already been used")
+			a.respondError(
+				r.Context(),
+				w,
+				http.StatusConflict,
+				"verification_token_used",
+				"verification token has already been used",
+			)
 		default:
-			a.logger.Error("failed to verify email", zap.Error(err))
-			writeError(w, http.StatusInternalServerError, "internal_error", "internal server error")
+			a.logger.Error(
+				"failed to verify email",
+				zap.Error(err),
+				zap.String(string(requestIDKey), requestIDFromContext(r.Context())),
+			)
+			a.respondError(
+				r.Context(),
+				w,
+				http.StatusInternalServerError,
+				"internal_error",
+				"internal server error",
+			)
 		}
 		return
 	}
 
-	writeJSON(w, http.StatusOK, verifyEmailResponse{Status: "email_verified"})
+	a.respondJSON(r.Context(), w, http.StatusOK, verifyEmailResponse{Status: "email_verified"})
 }

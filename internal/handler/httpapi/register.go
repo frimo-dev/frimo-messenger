@@ -27,7 +27,7 @@ func (a *API) registerUser(w http.ResponseWriter, r *http.Request) {
 	var request registerRequest
 
 	if err := decodeJSON(w, r, &request); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		a.respondError(r.Context(), w, http.StatusBadRequest, "invalid_request", err.Error())
 		return
 	}
 
@@ -41,7 +41,8 @@ func (a *API) registerUser(w http.ResponseWriter, r *http.Request) {
 
 		switch {
 		case errors.As(err, &validationErr):
-			writeError(
+			a.respondError(
+				r.Context(),
 				w,
 				http.StatusBadRequest,
 				validationErr.Code,
@@ -49,7 +50,8 @@ func (a *API) registerUser(w http.ResponseWriter, r *http.Request) {
 			)
 
 		case errors.Is(err, user.ErrEmailAlreadyExists):
-			writeError(
+			a.respondError(
+				r.Context(),
 				w,
 				http.StatusConflict,
 				"email_already_exists",
@@ -57,9 +59,14 @@ func (a *API) registerUser(w http.ResponseWriter, r *http.Request) {
 			)
 
 		default:
-			a.logger.Error("failed to register user", zap.Error(err))
+			a.logger.Error(
+				"failed to register user",
+				zap.Error(err),
+				zap.String(string(requestIDKey), requestIDFromContext(r.Context())),
+			)
 
-			writeError(
+			a.respondError(
+				r.Context(),
 				w,
 				http.StatusInternalServerError,
 				"internal_error",
@@ -70,7 +77,7 @@ func (a *API) registerUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusAccepted, registerResponse{
+	a.respondJSON(r.Context(), w, http.StatusAccepted, registerResponse{
 		ID:    createdUser.ID,
 		Email: createdUser.Email,
 	})

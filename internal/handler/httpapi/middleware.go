@@ -46,7 +46,7 @@ func requestLoggingMiddleware(logger *zap.Logger, next http.Handler) http.Handle
 
 		logger.Info(
 			"http request completed",
-			zap.String("request_id", requestID),
+			zap.String(string(requestIDKey), requestID),
 			zap.String("method", r.Method),
 			zap.String("path", r.URL.Path),
 			zap.Int("status", writer.status),
