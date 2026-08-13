@@ -70,5 +70,10 @@ func (a *API) verifyEmail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	a.logger.Info(
+		"user verified successfully",
+		zap.String(string(requestIDKey), requestIDFromContext(r.Context())),
+	)
+
 	a.respondJSON(r.Context(), w, http.StatusOK, verifyEmailResponse{Status: "email_verified"})
 }
