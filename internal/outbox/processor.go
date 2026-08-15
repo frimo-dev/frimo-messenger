@@ -5,6 +5,7 @@ import (
 	"errors"
 	"time"
 
+	"github.com/google/uuid"
 	"go.uber.org/zap"
 )
 
@@ -18,16 +19,16 @@ var ErrNoEvents = errors.New("no outbox dto")
 
 type Repository interface {
 	// ClaimNext находит следующее готовое событие и закрепляет его за этим worker’ом(атомарная операция)
-	ClaimNext(ctx context.Context, now time.Time, lockExpiredBefore time.Time) (Event, error)
+	ClaimNext(ctx context.Context, lockID string, now time.Time, lockExpiredBefore time.Time) (Event, error)
 
 	// MarkProcessed помечает событие успешно обработанным, после этого событие больше не выбирается worker’ами
-	MarkProcessed(ctx context.Context, eventID string, processedAt time.Time) error
+	MarkProcessed(ctx context.Context, eventID string, lockID string, processedAt time.Time) error
 
 	// ScheduleRetry помечает событие доступным через определенный промежуток времени
-	ScheduleRetry(ctx context.Context, eventID string, availableAt time.Time, lastError string) error
+	ScheduleRetry(ctx context.Context, eventID string, lockID string, availableAt time.Time, lastError string) error
 
 	// MarkFailed помечает событие не выполняемым
-	MarkFailed(ctx context.Context, eventID string, failedAt time.Time, lastError string) error
+	MarkFailed(ctx context.Context, eventID string, lockID string, failedAt time.Time, lastError string) error
 }
 
 type Processor struct {
@@ -82,8 +83,9 @@ func (p *Processor) Run(ctx context.Context) error {
 
 func (p *Processor) processOne(ctx context.Context) (bool, error) {
 	now := p.now().UTC()
+	lockID := uuid.NewString()
 
-	event, err := p.repository.ClaimNext(ctx, now, now.Add(-p.lockLease))
+	event, err := p.repository.ClaimNext(ctx, lockID, now, now.Add(-p.lockLease))
 	if err != nil {
 		if errors.Is(err, ErrNoEvents) {
 			return false, nil
@@ -95,7 +97,7 @@ func (p *Processor) processOne(ctx context.Context) (bool, error) {
 	handleErr := p.handler.Handle(ctx, event)
 	if handleErr != nil {
 		if errors.Is(handleErr, ErrNonRetryable) || event.Attempts >= p.maxAttempts {
-			markErr := p.repository.MarkFailed(ctx, event.ID, p.now().UTC(), handleErr.Error())
+			markErr := p.repository.MarkFailed(ctx, event.ID, lockID, p.now().UTC(), handleErr.Error())
 			if markErr != nil {
 				return true, errors.Join(handleErr, markErr)
 			}
@@ -113,7 +115,7 @@ func (p *Processor) processOne(ctx context.Context) (bool, error) {
 
 		retryAt := p.now().UTC().Add(retryDelay(event.Attempts))
 
-		markErr := p.repository.ScheduleRetry(ctx, event.ID, retryAt, handleErr.Error())
+		markErr := p.repository.ScheduleRetry(ctx, event.ID, lockID, retryAt, handleErr.Error())
 		if markErr != nil {
 			return true, errors.Join(handleErr, markErr)
 		}
@@ -121,7 +123,7 @@ func (p *Processor) processOne(ctx context.Context) (bool, error) {
 		return true, nil
 	}
 
-	if err := p.repository.MarkProcessed(ctx, event.ID, p.now().UTC()); err != nil {
+	if err := p.repository.MarkProcessed(ctx, event.ID, lockID, p.now().UTC()); err != nil {
 		return true, err
 	}
 

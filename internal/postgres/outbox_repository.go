@@ -19,17 +19,17 @@ func NewOutboxRepository(pool *pgxpool.Pool) *OutboxRepository {
 	return &OutboxRepository{pool: pool}
 }
 
-func (r *OutboxRepository) ClaimNext(ctx context.Context, now time.Time, lockExpiredBefore time.Time) (outbox.Event, error) {
+func (r *OutboxRepository) ClaimNext(ctx context.Context, lockID string, now time.Time, lockExpiredBefore time.Time) (outbox.Event, error) {
 	const query = `
 		WITH candidate AS (
 			SELECT id
 			FROM outbox_events
 			WHERE processed_at IS NULL
 				AND failed_at IS NULL
-				AND available_at <= $1
+				AND available_at <= $2
 				AND (
 					locked_at IS NULL
-					OR locked_at < $2
+					OR locked_at < $3
 				)
 			ORDER BY available_at, created_at
 			FOR UPDATE SKIP LOCKED
@@ -37,7 +37,8 @@ func (r *OutboxRepository) ClaimNext(ctx context.Context, now time.Time, lockExp
 		)
 		UPDATE outbox_events AS event
 		SET
-			locked_at = $1,
+			lock_id = $1,
+			locked_at = $2,
 			attempts = attempts + 1,
 			last_error = NULL
 		FROM candidate
@@ -53,7 +54,7 @@ func (r *OutboxRepository) ClaimNext(ctx context.Context, now time.Time, lockExp
 
 	var event outbox.Event
 
-	err := r.pool.QueryRow(ctx, query, now, lockExpiredBefore).Scan(
+	err := r.pool.QueryRow(ctx, query, lockID, now, lockExpiredBefore).Scan(
 		&event.ID,
 		&event.Type,
 		&event.Payload,
@@ -72,64 +73,80 @@ func (r *OutboxRepository) ClaimNext(ctx context.Context, now time.Time, lockExp
 	return event, nil
 }
 
-func (r *OutboxRepository) MarkProcessed(ctx context.Context, eventID string, processedAt time.Time) error {
+func (r *OutboxRepository) MarkProcessed(ctx context.Context, eventID string, lockID string, processedAt time.Time) error {
 	const query = `
 		UPDATE outbox_events
 		SET
-			processed_at = $2,
+			processed_at = $3,
 			locked_at = NULL,
+			lock_id = NULL,
 			last_error = NULL,
 			payload = '{}'::jsonb
 		WHERE
 			id = $1
+		  	AND lock_id = $2
 			AND processed_at IS NULL
 	`
 
-	commandTag, err := r.pool.Exec(ctx, query, eventID, processedAt)
+	commandTag, err := r.pool.Exec(ctx, query, eventID, lockID, processedAt)
 	if err != nil {
 		return fmt.Errorf("mark outbox event processed: %w", err)
 	}
 
 	if commandTag.RowsAffected() != 1 {
-		return fmt.Errorf("mark outbox event processed: unexpected affected rows: %d", commandTag.RowsAffected())
+		return fmt.Errorf("mark outbox event processed: %w", outbox.ErrLeaseLost)
 	}
 
 	return nil
 }
 
-func (r *OutboxRepository) ScheduleRetry(ctx context.Context, eventID string, availableAt time.Time, lastError string) error {
+func (r *OutboxRepository) ScheduleRetry(ctx context.Context, eventID string, lockID string, availableAt time.Time, lastError string) error {
 	const query = `
 		UPDATE outbox_events
 		SET
 			locked_at = NULL,
-			available_at = $2,
-			last_error = LEFT($3, 1000)
-		WHERE id = $1
+			lock_id = NULL,
+			available_at = $3,
+			last_error = LEFT($4, 1000)
+		WHERE
+		    id = $1
+		  	AND lock_id = $2
 			AND processed_at IS NULL
 			AND failed_at IS NULL
 	`
-	_, err := r.pool.Exec(ctx, query, eventID, availableAt, lastError)
+	commandTag, err := r.pool.Exec(ctx, query, eventID, lockID, availableAt, lastError)
 	if err != nil {
 		return fmt.Errorf("schedule outbox retry: %w", err)
 	}
 
+	if commandTag.RowsAffected() != 1 {
+		return fmt.Errorf("schedule outbox retry: %w", outbox.ErrLeaseLost)
+	}
+
 	return nil
 }
 
-func (r *OutboxRepository) MarkFailed(ctx context.Context, eventID string, failedAt time.Time, lastError string) error {
+func (r *OutboxRepository) MarkFailed(ctx context.Context, eventID string, lockID string, failedAt time.Time, lastError string) error {
 	const query = `
 		UPDATE outbox_events
 		SET
-			failed_at = $2,
-			locked_at = NULL,
-			last_error = LEFT($3, 1000)
-		WHERE id = $1
+		    locked_at = NULL,
+			lock_id = NULL,
+			failed_at = $3,
+			last_error = LEFT($4, 1000)
+		WHERE
+		    id = $1
+		  	AND lock_id = $2
 			AND processed_at IS NULL
 	`
 
-	_, err := r.pool.Exec(ctx, query, eventID, failedAt, lastError)
+	commandTag, err := r.pool.Exec(ctx, query, eventID, lockID, failedAt, lastError)
 	if err != nil {
 		return fmt.Errorf("mark outbox event failed: %w", err)
+	}
+
+	if commandTag.RowsAffected() != 1 {
+		return fmt.Errorf("mark outbox event failed: %w", outbox.ErrLeaseLost)
 	}
 
 	return nil
