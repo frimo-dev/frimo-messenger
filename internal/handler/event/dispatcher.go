@@ -54,7 +54,7 @@ func (d *Dispatcher) Handle(ctx context.Context, event outbox.Event) error {
 	case dto.EmailVerificationRequestedType:
 		return d.handleEmailVerificationRequested(ctx, event)
 	default:
-		return fmt.Errorf("unsupported event type %q", event.Type)
+		return errors.Join(outbox.ErrNonRetryable, fmt.Errorf("unsupported event type %q", event.Type))
 	}
 }
 
@@ -62,25 +62,25 @@ func (d *Dispatcher) handleEmailVerificationRequested(ctx context.Context, event
 	var payload dto.EmailVerificationRequested
 
 	if err := json.Unmarshal(event.Payload, &payload); err != nil {
-		return fmt.Errorf("decode email verification event: %w", err)
+		return errors.Join(outbox.ErrNonRetryable, err)
 	}
 
 	if payload.VerificationID == "" {
-		return errors.New("verification ID is empty")
+		return errors.Join(outbox.ErrNonRetryable, errors.New("verification ID is empty"))
 	}
 
 	if payload.Recipient == "" {
-		return errors.New("verification recipient is empty")
+		return errors.Join(outbox.ErrNonRetryable, errors.New("verification recipient is empty"))
 	}
 
 	data, err := d.deliveryRepository.GetForDelivery(ctx, payload.VerificationID)
 	if err != nil {
+		// Уже подтверждённый или отозванный токен: повторная доставка не требуется
 		if errors.Is(err, emailverification.ErrDeliveryInactive) {
-			// Уже подтверждённый или отозванный токен: повторная доставка не требуется
 			return nil
 		}
 
-		return fmt.Errorf("get verification delivery data: %w", err)
+		return fmt.Errorf("failed to get verification delivery data: %w", err)
 	}
 
 	// Истёкшее письмо уже нет смысла отправлять
@@ -90,7 +90,7 @@ func (d *Dispatcher) handleEmailVerificationRequested(ctx context.Context, event
 
 	rawToken, err := d.tokenCipher.Decrypt(data.TokenCiphertext, []byte(data.ID))
 	if err != nil {
-		return fmt.Errorf("decrypt verification token: %w", err)
+		return fmt.Errorf("failed to decrypt verification token: %w", err)
 	}
 
 	verificationURL := d.baseURL + "/auth/verify-email?token=" + url.QueryEscape(string(rawToken))
@@ -104,7 +104,7 @@ func (d *Dispatcher) handleEmailVerificationRequested(ctx context.Context, event
 	)
 
 	if err != nil {
-		return fmt.Errorf("send verification email: %w", err)
+		return fmt.Errorf("failed to send verification email: %w", err)
 	}
 
 	return nil

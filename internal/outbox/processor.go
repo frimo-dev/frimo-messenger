@@ -20,7 +20,7 @@ type Repository interface {
 	// ClaimNext находит следующее готовое событие и закрепляет его за этим worker’ом(атомарная операция)
 	ClaimNext(ctx context.Context, now time.Time, lockExpiredBefore time.Time) (Event, error)
 
-	// MarkProcessed помечает событие успешно обработаным, после этого событие больше не выбирается worker’ами
+	// MarkProcessed помечает событие успешно обработанным, после этого событие больше не выбирается worker’ами
 	MarkProcessed(ctx context.Context, eventID string, processedAt time.Time) error
 
 	// ScheduleRetry помечает событие доступным через определенный промежуток времени
@@ -68,7 +68,7 @@ func (p *Processor) Run(ctx context.Context) error {
 		case <-timer.C:
 			processed, err := p.processOne(ctx)
 			if err != nil {
-				p.logger.Error("process outbox event", zap.Error(err))
+				p.logger.Error("failed process outbox event", zap.Error(err))
 			}
 
 			if processed {
@@ -94,7 +94,7 @@ func (p *Processor) processOne(ctx context.Context) (bool, error) {
 
 	handleErr := p.handler.Handle(ctx, event)
 	if handleErr != nil {
-		if event.Attempts >= p.maxAttempts {
+		if errors.Is(handleErr, ErrNonRetryable) || event.Attempts >= p.maxAttempts {
 			markErr := p.repository.MarkFailed(ctx, event.ID, p.now().UTC(), handleErr.Error())
 			if markErr != nil {
 				return true, errors.Join(handleErr, markErr)
@@ -102,10 +102,10 @@ func (p *Processor) processOne(ctx context.Context) (bool, error) {
 
 			p.logger.Error(
 				"outbox event permanently failed",
+				zap.Error(handleErr),
 				zap.String("event_id", event.ID),
 				zap.String("event_type", event.Type),
 				zap.Int("attempts", event.Attempts),
-				zap.Error(handleErr),
 			)
 
 			return true, nil
