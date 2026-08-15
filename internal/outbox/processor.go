@@ -3,6 +3,7 @@ package outbox
 import (
 	"context"
 	"errors"
+	"math/rand"
 	"time"
 
 	"github.com/google/uuid"
@@ -131,6 +132,17 @@ func (p *Processor) processOne(ctx context.Context) (bool, error) {
 }
 
 func retryDelay(attempt int) time.Duration {
+	base := retryBaseDelay(attempt)
+
+	const jitter = 0.25
+
+	minDelay := float64(base) * (1 - jitter)
+	spread := float64(base) * (2 * jitter)
+
+	return time.Duration(minDelay + rand.Float64()*spread)
+}
+
+func retryBaseDelay(attempt int) time.Duration {
 	switch {
 	case attempt <= 1:
 		return 5 * time.Second

@@ -1,0 +1,9 @@
+curl -i \
+  -X POST http://localhost:8080/auth/register \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "email": "test@example.com",
+    "password": "TestPassword123!"
+  }'
+
+curl -i "http://localhost:8080/auth/verify-email?token=${TOKEN}"
