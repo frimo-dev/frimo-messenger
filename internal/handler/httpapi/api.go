@@ -31,7 +31,11 @@ func New(logger *zap.Logger, userService *user.Service, emailVerificationService
 }
 
 func (a *API) Handler() http.Handler {
-	return requestLoggingMiddleware(a.logger, a.mux)
+	var handler http.Handler = a.mux
+	handler = RecoveryMiddleware(a.logger, handler)
+	handler = RequestLoggingMiddleware(a.logger, handler)
+
+	return handler
 }
 
 func (a *API) registerRoutes() {

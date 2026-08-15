@@ -1,4 +1,4 @@
-package httpapi
+package httpapi_test
 
 //func TestRegisterUser(t *testing.T) {
 //	api := newTestAPI()
