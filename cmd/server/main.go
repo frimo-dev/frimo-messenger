@@ -93,7 +93,7 @@ func main() {
 		logger.Info("shutdown signal received")
 	}
 
-	shutdownContext, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	shutdownContext, cancel := context.WithTimeout(context.Background(), cfg.GracefulShutdown.HTTPShutdownTimeout)
 	defer cancel()
 
 	if err := server.Shutdown(shutdownContext); err != nil {

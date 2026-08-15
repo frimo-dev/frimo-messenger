@@ -7,10 +7,11 @@ import (
 )
 
 type Config struct {
-	HTTP         HTTPConfig
-	Database     DatabaseConfig
-	App          AppConfig
-	Verification VerificationConfig
+	HTTP             HTTPConfig
+	Database         DatabaseConfig
+	App              AppConfig
+	Verification     VerificationConfig
+	GracefulShutdown GracefulShutdownConfig
 
 	VerificationTokenLifetime time.Duration
 }
@@ -39,6 +40,11 @@ type HTTPConfig struct {
 	IdleTimeout time.Duration
 }
 
+type GracefulShutdownConfig struct {
+	HTTPShutdownTimeout   time.Duration
+	WorkerShutdownTimeout time.Duration
+}
+
 func Load() (Config, error) {
 	cfg := Config{
 		HTTP: HTTPConfig{
@@ -58,6 +64,10 @@ func Load() (Config, error) {
 			EncryptionKey: os.Getenv(
 				"VERIFICATION_TOKEN_ENCRYPTION_KEY",
 			),
+		},
+		GracefulShutdown: GracefulShutdownConfig{
+			HTTPShutdownTimeout:   10 * time.Second,
+			WorkerShutdownTimeout: 10 * time.Second,
 		},
 		VerificationTokenLifetime: 30 * time.Minute,
 	}
