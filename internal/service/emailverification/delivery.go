@@ -15,7 +15,6 @@ type DeliveryData struct {
 	ID              string
 	TokenCiphertext []byte
 	ExpiresAt       time.Time
-	UsedAt          *time.Time
 }
 
 type DeliveryRepository interface {

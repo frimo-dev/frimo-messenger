@@ -5,6 +5,7 @@ CREATE TABLE email_verifications (
     token_ciphertext BYTEA,
 	expires_at TIMESTAMPTZ NOT NULL,
 	used_at TIMESTAMPTZ,
+    revoked_at TIMESTAMPTZ,
 	created_at TIMESTAMPTZ NOT NULL
 );
 
