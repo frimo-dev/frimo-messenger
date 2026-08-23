@@ -70,6 +70,7 @@ func main() {
 		dispatcher,
 		logger,
 		time.Now,
+		cfg.GracefulShutdown.WorkerShutdownTimeout,
 	)
 
 	logger.Info("worker started")
