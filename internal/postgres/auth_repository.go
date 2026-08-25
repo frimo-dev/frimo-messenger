@@ -7,20 +7,107 @@ import (
 	"time"
 	"uuid"
 
-	"github.com/frimo-dev/frimo-messenger/internal/service/emailverification"
+	"github.com/frimo-dev/frimo-messenger/internal/service/auth"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-type EmailVerificationRepository struct {
+// Стандартный код ошибки PostgreSQL, означающий попытку нарушить уникальность ключа
+const uniqueViolationCode = "23505"
+
+type AuthRepository struct {
 	pool *pgxpool.Pool
 }
 
-func NewEmailVerificationRepository(pool *pgxpool.Pool) *EmailVerificationRepository {
-	return &EmailVerificationRepository{pool: pool}
+func NewAuthRepository(pool *pgxpool.Pool) *AuthRepository {
+	return &AuthRepository{pool: pool}
 }
 
-func (r *EmailVerificationRepository) Confirm(ctx context.Context, tokenHash []byte, confirmedAt time.Time) error {
+func (r *AuthRepository) Create(ctx context.Context, input auth.CreationInput) (auth.User, error) {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return auth.User{}, fmt.Errorf("create transaction: %w", err)
+	}
+
+	defer func() {
+		_ = tx.Rollback(ctx)
+	}()
+
+	const query = `
+		INSERT INTO users (
+		    id,
+		    email,
+		    password_hash,
+		    created_at
+		)
+		VALUES ($1, $2, $3, $4)`
+
+	_, err = tx.Exec(
+		ctx,
+		query,
+		input.ID,
+		input.Email,
+		input.PasswordHash,
+		input.CreatedAt,
+	)
+	if err != nil {
+		if isEmailUniqueViolation(err) {
+			return auth.User{}, auth.ErrEmailAlreadyExists
+		}
+
+		return auth.User{}, fmt.Errorf("insert user: %w", err)
+	}
+
+	const insertVerificationQuery = `
+		INSERT INTO email_verifications (
+		    id,
+		    user_id,
+		    token_hash,
+		    token_ciphertext,
+		    expires_at,
+		    created_at
+		)
+		VALUES ($1, $2, $3, $4, $5, $6)`
+
+	_, err = tx.Exec(ctx, insertVerificationQuery, input.VerificationID, input.ID, input.VerificationTokenHash, input.VerificationTokenCiphertext, input.VerificationExpiresAt, input.CreatedAt)
+	if err != nil {
+		return auth.User{}, fmt.Errorf("insert verification: %w", err)
+	}
+
+	const insertOutboxQuery = `
+		INSERT INTO outbox_events (
+			id,
+			event_type,
+			payload,
+			created_at,
+			available_at
+		)
+		VALUES ($1, $2, $3, $4, $5)
+	`
+
+	_, err = tx.Exec(
+		ctx,
+		insertOutboxQuery,
+		input.OutboxEvent.ID,
+		input.OutboxEvent.Type,
+		input.OutboxEvent.Payload,
+		input.OutboxEvent.CreatedAt,
+		input.OutboxEvent.AvailableAt,
+	)
+	if err != nil {
+		return auth.User{}, fmt.Errorf("insert outbox event: %w", err)
+	}
+
+	err = tx.Commit(ctx)
+	if err != nil {
+		return auth.User{}, fmt.Errorf("commit transaction: %w", err)
+	}
+
+	return auth.User{ID: input.ID, Email: input.Email, CreatedAt: input.CreatedAt}, nil
+}
+
+func (r *AuthRepository) Confirm(ctx context.Context, tokenHash []byte, confirmedAt time.Time) error {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("failed begin email verification transaction: %w", err)
@@ -39,7 +126,7 @@ func (r *EmailVerificationRepository) Confirm(ctx context.Context, tokenHash []b
 	err = tx.QueryRow(ctx, selectUserIDQuery, tokenHash).Scan(&userID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return emailverification.ErrInvalidToken
+			return auth.ErrInvalidToken
 		}
 
 		return fmt.Errorf("failed select verification token: %w", err)
@@ -74,26 +161,26 @@ func (r *EmailVerificationRepository) Confirm(ctx context.Context, tokenHash []b
 	err = tx.QueryRow(ctx, selectQuery, tokenHash, userID).Scan(&expiresAt, &usedAt, &revokedAt)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return emailverification.ErrInvalidToken
+			return auth.ErrInvalidToken
 		}
 
 		return fmt.Errorf("failed select verification token: %w", err)
 	}
 
 	if usedAt != nil {
-		return emailverification.ErrUsedToken
+		return auth.ErrUsedToken
 	}
 
 	if revokedAt != nil {
-		return emailverification.ErrRevokedToken
+		return auth.ErrRevokedToken
 	}
 
 	if !confirmedAt.Before(expiresAt) {
-		return emailverification.ErrExpiredToken
+		return auth.ErrExpiredToken
 	}
 
 	if emailVerifiedAt != nil {
-		return emailverification.ErrAlreadyVerified
+		return auth.ErrAlreadyVerified
 	}
 
 	const updateVerificationQuery = `
@@ -131,7 +218,7 @@ func (r *EmailVerificationRepository) Confirm(ctx context.Context, tokenHash []b
 }
 
 // ResendVerificationToken TODO: вынести лимиты cooldown в config
-func (r *EmailVerificationRepository) ResendVerificationToken(ctx context.Context, input emailverification.ResendInput) error {
+func (r *AuthRepository) ResendVerificationToken(ctx context.Context, input auth.ResendInput) error {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("failed begin resend verification token transaction: %w", err)
@@ -150,14 +237,14 @@ func (r *EmailVerificationRepository) ResendVerificationToken(ctx context.Contex
 
 	if err := tx.QueryRow(ctx, selectUserQuery, input.Email).Scan(&userID, &emailVerifiedAt); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return emailverification.ErrUserNotFound
+			return auth.ErrUserNotFound
 		}
 
 		return fmt.Errorf("failed select user for resend verification token: %w", err)
 	}
 
 	if emailVerifiedAt != nil {
-		return emailverification.ErrAlreadyVerified
+		return auth.ErrAlreadyVerified
 	}
 
 	const selectLastHourCreatedQuery = `
@@ -175,7 +262,7 @@ func (r *EmailVerificationRepository) ResendVerificationToken(ctx context.Contex
 	}
 
 	if count >= 5 {
-		return emailverification.ErrResendHourlyLimit
+		return auth.ErrResendHourlyLimit
 	}
 
 	// MAX() - всегда возвращает одну строку, но если не нашлось записи, то значение будет NULL
@@ -192,7 +279,7 @@ func (r *EmailVerificationRepository) ResendVerificationToken(ctx context.Contex
 	}
 
 	if createdAt != nil && input.ResendAt.Sub(*createdAt) < time.Minute {
-		return emailverification.ErrResendCooldown
+		return auth.ErrResendCooldown
 	}
 
 	const updateEmailVerificationQuery = `
@@ -266,7 +353,7 @@ func (r *EmailVerificationRepository) ResendVerificationToken(ctx context.Contex
 	return nil
 }
 
-func (r *EmailVerificationRepository) GetForDelivery(ctx context.Context, verificationID string) (emailverification.DeliveryData, error) {
+func (r *AuthRepository) GetForDelivery(ctx context.Context, verificationID string) (auth.DeliveryData, error) {
 	const query = `
 		SELECT
 			id,
@@ -277,24 +364,35 @@ func (r *EmailVerificationRepository) GetForDelivery(ctx context.Context, verifi
 		FROM email_verifications
 		WHERE id = $1
 	`
-	var data emailverification.DeliveryData
+	var data auth.DeliveryData
 	var usedAt *time.Time
 	var revokedAt *time.Time
 
 	err := r.pool.QueryRow(ctx, query, verificationID).Scan(&data.ID, &data.TokenCiphertext, &data.ExpiresAt, &usedAt, &revokedAt)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return emailverification.DeliveryData{}, emailverification.ErrDeliveryNotFound
+			return auth.DeliveryData{}, auth.ErrDeliveryNotFound
 		}
-		return emailverification.DeliveryData{}, fmt.Errorf("failed to get email verification for delivery: %w", err)
+		return auth.DeliveryData{}, fmt.Errorf("failed to get email verification for delivery: %w", err)
 	}
 
 	if usedAt != nil || revokedAt != nil || len(data.TokenCiphertext) == 0 {
-		return emailverification.DeliveryData{}, emailverification.ErrDeliveryInactive
+		return auth.DeliveryData{}, auth.ErrDeliveryInactive
 	}
 
 	return data, nil
 }
 
-var _ emailverification.Repository = (*EmailVerificationRepository)(nil)
-var _ emailverification.DeliveryRepository = (*EmailVerificationRepository)(nil)
+func isEmailUniqueViolation(err error) bool {
+	var postgresError *pgconn.PgError
+
+	if !errors.As(err, &postgresError) {
+		return false
+	}
+
+	return postgresError.Code == uniqueViolationCode &&
+		postgresError.ConstraintName == "users_email_unique_idx"
+}
+
+var _ auth.Repository = (*AuthRepository)(nil)
+var _ auth.DeliveryRepository = (*AuthRepository)(nil)

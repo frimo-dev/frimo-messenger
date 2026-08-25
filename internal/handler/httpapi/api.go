@@ -3,26 +3,23 @@ package httpapi
 import (
 	"net/http"
 
-	"github.com/frimo-dev/frimo-messenger/internal/service/emailverification"
-	"github.com/frimo-dev/frimo-messenger/internal/service/user"
+	"github.com/frimo-dev/frimo-messenger/internal/service/auth"
 	"go.uber.org/zap"
 )
 
 type API struct {
 	mux *http.ServeMux
 
-	userService              *user.Service
-	emailVerificationService *emailverification.Service
+	authService *auth.Service
 
 	logger *zap.Logger
 }
 
-func New(logger *zap.Logger, userService *user.Service, emailVerificationService *emailverification.Service) *API {
+func New(logger *zap.Logger, authService *auth.Service) *API {
 	api := &API{
-		mux:                      http.NewServeMux(),
-		userService:              userService,
-		emailVerificationService: emailVerificationService,
-		logger:                   logger,
+		mux:         http.NewServeMux(),
+		authService: authService,
+		logger:      logger,
 	}
 
 	api.registerRoutes()
@@ -40,7 +37,9 @@ func (a *API) Handler() http.Handler {
 
 func (a *API) registerRoutes() {
 	a.mux.HandleFunc("GET /health", a.health)
+
 	a.mux.HandleFunc("POST /auth/register", a.registerUser)
 	// TODO: формально GET здесь не подходит, так как меняется состояние при подтверждении email
 	a.mux.HandleFunc("GET /auth/verify-email", a.verifyEmail)
+	a.mux.HandleFunc("POST /auth/resend", a.resendVerificationToken)
 }

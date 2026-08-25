@@ -4,7 +4,7 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/frimo-dev/frimo-messenger/internal/service/emailverification"
+	"github.com/frimo-dev/frimo-messenger/internal/service/auth"
 	"go.uber.org/zap"
 )
 
@@ -26,10 +26,10 @@ func (a *API) verifyEmail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err := a.emailVerificationService.Confirm(r.Context(), rawToken)
+	err := a.authService.Confirm(r.Context(), rawToken)
 	if err != nil {
 		switch {
-		case errors.Is(err, emailverification.ErrInvalidToken):
+		case errors.Is(err, auth.ErrInvalidToken):
 			a.respondError(
 				r.Context(),
 				w,
@@ -37,7 +37,7 @@ func (a *API) verifyEmail(w http.ResponseWriter, r *http.Request) {
 				"invalid_verification_token",
 				"verification token is invalid",
 			)
-		case errors.Is(err, emailverification.ErrExpiredToken):
+		case errors.Is(err, auth.ErrExpiredToken):
 			a.respondError(
 				r.Context(),
 				w,
@@ -45,7 +45,7 @@ func (a *API) verifyEmail(w http.ResponseWriter, r *http.Request) {
 				"verification_token_expired",
 				"verification token has expired",
 			)
-		case errors.Is(err, emailverification.ErrUsedToken):
+		case errors.Is(err, auth.ErrUsedToken):
 			a.respondError(
 				r.Context(),
 				w,

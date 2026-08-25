@@ -1,4 +1,4 @@
-package user
+package auth
 
 import (
 	"context"
@@ -11,6 +11,7 @@ import (
 
 	"github.com/frimo-dev/frimo-messenger/internal/dto"
 	"github.com/frimo-dev/frimo-messenger/internal/outbox"
+	"github.com/frimo-dev/frimo-messenger/internal/security/token"
 	"github.com/google/uuid"
 )
 
@@ -115,6 +116,20 @@ func (s *Service) Register(ctx context.Context, input RegistrationInput) (User, 
 	}
 
 	return createdUser, nil
+}
+
+func (s *Service) Confirm(ctx context.Context, rawToken string) error {
+	if rawToken == "" {
+		return ErrInvalidToken
+	}
+
+	tokenHash := token.Hash(rawToken)
+
+	return s.repository.Confirm(ctx, tokenHash, s.now().UTC())
+}
+
+func (s *Service) ResendVerificationToken(ctx context.Context, email string) error {
+	return nil
 }
 
 func normalizeEmail(email string) string {

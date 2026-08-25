@@ -1,4 +1,4 @@
-package emailverification
+package auth
 
 import (
 	"context"
@@ -7,6 +7,20 @@ import (
 
 	"github.com/frimo-dev/frimo-messenger/internal/outbox"
 )
+
+type CreationInput struct {
+	ID           string
+	Email        string
+	PasswordHash string
+	CreatedAt    time.Time
+
+	VerificationID              string
+	VerificationTokenHash       []byte
+	VerificationTokenCiphertext []byte
+	VerificationExpiresAt       time.Time
+
+	OutboxEvent outbox.Event
+}
 
 type ResendInput struct {
 	Email    string
@@ -21,6 +35,7 @@ type ResendInput struct {
 }
 
 type Repository interface {
+	Create(ctx context.Context, data CreationInput) (User, error)
 	Confirm(ctx context.Context, tokenHash []byte, confirmedAt time.Time) error
 	ResendVerificationToken(ctx context.Context, input ResendInput) error
 }

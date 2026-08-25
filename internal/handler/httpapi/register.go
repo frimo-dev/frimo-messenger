@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/frimo-dev/frimo-messenger/internal/service/user"
+	"github.com/frimo-dev/frimo-messenger/internal/service/auth"
 	"go.uber.org/zap"
 )
 
@@ -31,13 +31,13 @@ func (a *API) registerUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	createdUser, err := a.userService.Register(r.Context(), user.RegistrationInput{
+	createdUser, err := a.authService.Register(r.Context(), auth.RegistrationInput{
 		Email:    request.Email,
 		Password: request.Password,
 	})
 
 	if err != nil {
-		var validationErr *user.ValidationError
+		var validationErr *auth.ValidationError
 
 		switch {
 		case errors.As(err, &validationErr):
@@ -49,7 +49,7 @@ func (a *API) registerUser(w http.ResponseWriter, r *http.Request) {
 				validationErr.Message,
 			)
 
-		case errors.Is(err, user.ErrEmailAlreadyExists):
+		case errors.Is(err, auth.ErrEmailAlreadyExists):
 			a.respondError(
 				r.Context(),
 				w,

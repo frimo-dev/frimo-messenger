@@ -1,4 +1,4 @@
-package user_test
+package auth_test
 
 import (
 	"bytes"
@@ -6,7 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/frimo-dev/frimo-messenger/internal/service/user"
+	"github.com/frimo-dev/frimo-messenger/internal/security/token"
+	"github.com/frimo-dev/frimo-messenger/internal/service/auth"
 	"github.com/google/uuid"
 )
 
@@ -43,25 +44,45 @@ func (g *spyTokenGenerator) Generate() (string, []byte, error) {
 	return g.rawToken, g.tokenHash, nil
 }
 
-type spyUserRepository struct {
-	receivedInput user.CreationInput
-	createdUser   user.User
+type spyRepository struct {
+	receivedInput auth.CreationInput
+	createdUser   auth.User
+
+	receivedTokenHash   []byte
+	receivedConfirmedAt time.Time
+
 	err           error
 	called        bool
 }
 
-func (r *spyUserRepository) Create(
+func (r *spyRepository) Create(
 	_ context.Context,
-	input user.CreationInput,
-) (user.User, error) {
+	input auth.CreationInput,
+) (auth.User, error) {
 	r.called = true
 	r.receivedInput = input
 
 	if r.err != nil {
-		return user.User{}, r.err
+		return auth.User{}, r.err
 	}
 
 	return r.createdUser, nil
+}
+
+func (r *spyRepository) Confirm(
+	_ context.Context,
+	tokenHash []byte,
+	confirmedAt time.Time,
+) error {
+	r.called = true
+	r.receivedTokenHash = tokenHash
+	r.receivedConfirmedAt = confirmedAt
+
+	return r.err
+}
+
+func (r *spyRepository) ResendVerificationToken(_ context.Context, input auth.ResendInput) error {
+	return nil
 }
 
 type stubTokenCipher struct {
@@ -105,8 +126,8 @@ func TestServiceRegisterCreatesUserAndVerificationToken(t *testing.T) {
 		time.UTC,
 	)
 
-	repository := &spyUserRepository{
-		createdUser: user.User{
+	repository := &spyRepository{
+		createdUser: auth.User{
 			ID:        "user-id",
 			Email:     "misha@example.com",
 			CreatedAt: now,
@@ -126,7 +147,7 @@ func TestServiceRegisterCreatesUserAndVerificationToken(t *testing.T) {
 		ciphertext: []byte("encrypted-token"),
 	}
 
-	service := user.NewService(
+	service := auth.NewService(
 		repository,
 		passwordHasher,
 		tokenGenerator,
@@ -137,7 +158,7 @@ func TestServiceRegisterCreatesUserAndVerificationToken(t *testing.T) {
 
 	user, err := service.Register(
 		context.Background(),
-		user.RegistrationInput{
+		auth.RegistrationInput{
 			Email:    "  Misha@Example.com  ",
 			Password: "long-secret-password",
 		},
@@ -218,6 +239,89 @@ func TestServiceRegisterCreatesUserAndVerificationToken(t *testing.T) {
 			"expected created at %v, got %v",
 			now,
 			repository.receivedInput.CreatedAt,
+		)
+	}
+}
+
+func TestServiceConfirmHashesTokenAndConfirmsVerification(t *testing.T) {
+	repository := &spyRepository{}
+
+	now := time.Date(
+		2026,
+		time.July,
+		20,
+		15,
+		30,
+		0,
+		0,
+		time.FixedZone("UTC+3", 3*60*60),
+	)
+
+	passwordHasher := &spyPasswordHasher{
+		hash: "encoded-password-hash",
+	}
+
+	tokenGenerator := &spyTokenGenerator{
+		rawToken:  "raw-verification-token",
+		tokenHash: []byte("verification-token-hash"),
+	}
+
+	tokenCipher := &stubTokenCipher{
+		ciphertext: []byte("encrypted-token"),
+	}
+
+	service := auth.NewService(
+		repository,
+		passwordHasher,
+		tokenGenerator,
+		tokenCipher,
+		func() time.Time { return now },
+		time.Minute*30,
+	)
+
+	rawToken := "raw-verification-token"
+
+	err := service.Confirm(
+		context.Background(),
+		rawToken,
+	)
+	if err != nil {
+		t.Fatalf("confirm email: %v", err)
+	}
+
+	if !repository.called {
+		t.Fatal("expected repository to be called")
+	}
+
+	expectedHash := token.Hash(rawToken)
+
+	if !bytes.Equal(
+		repository.receivedTokenHash,
+		expectedHash,
+	) {
+		t.Fatalf(
+			"expected token hash %x, got %x",
+			expectedHash,
+			repository.receivedTokenHash,
+		)
+	}
+
+	expectedConfirmedAt := now.UTC()
+
+	if !repository.receivedConfirmedAt.Equal(
+		expectedConfirmedAt,
+	) {
+		t.Fatalf(
+			"expected confirmed at %v, got %v",
+			expectedConfirmedAt,
+			repository.receivedConfirmedAt,
+		)
+	}
+
+	if repository.receivedConfirmedAt.Location() != time.UTC {
+		t.Fatalf(
+			"expected UTC location, got %v",
+			repository.receivedConfirmedAt.Location(),
 		)
 	}
 }

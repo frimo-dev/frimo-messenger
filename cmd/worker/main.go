@@ -53,7 +53,7 @@ func main() {
 
 	emailSender := email.NewLogSender(logger)
 
-	verificationRepository := postgres.NewEmailVerificationRepository(databasePool)
+	verificationRepository := postgres.NewAuthRepository(databasePool)
 
 	dispatcher := event.NewDispatcher(
 		emailSender,

@@ -11,8 +11,8 @@ import (
 
 	"github.com/frimo-dev/frimo-messenger/internal/dto"
 	"github.com/frimo-dev/frimo-messenger/internal/outbox"
+	"github.com/frimo-dev/frimo-messenger/internal/service/auth"
 	"github.com/frimo-dev/frimo-messenger/internal/service/email"
-	"github.com/frimo-dev/frimo-messenger/internal/service/emailverification"
 )
 
 type TokenCipher interface {
@@ -23,7 +23,7 @@ type Clock func() time.Time
 
 type Dispatcher struct {
 	emailSender        email.Sender
-	deliveryRepository emailverification.DeliveryRepository
+	deliveryRepository auth.DeliveryRepository
 	tokenCipher        TokenCipher
 	baseURL            string
 	now                Clock
@@ -31,7 +31,7 @@ type Dispatcher struct {
 
 func NewDispatcher(
 	emailSender email.Sender,
-	deliveryRepository emailverification.DeliveryRepository,
+	deliveryRepository auth.DeliveryRepository,
 	tokenCipher TokenCipher,
 	baseURL string,
 	now Clock,
@@ -76,7 +76,7 @@ func (d *Dispatcher) handleEmailVerificationRequested(ctx context.Context, event
 	data, err := d.deliveryRepository.GetForDelivery(ctx, payload.VerificationID)
 	if err != nil {
 		// Уже подтверждённый или отозванный токен: повторная доставка не требуется
-		if errors.Is(err, emailverification.ErrDeliveryInactive) {
+		if errors.Is(err, auth.ErrDeliveryInactive) {
 			return nil
 		}
 

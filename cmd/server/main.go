@@ -16,8 +16,7 @@ import (
 	"github.com/frimo-dev/frimo-messenger/internal/security/password"
 	"github.com/frimo-dev/frimo-messenger/internal/security/secret"
 	"github.com/frimo-dev/frimo-messenger/internal/security/token"
-	"github.com/frimo-dev/frimo-messenger/internal/service/emailverification"
-	"github.com/frimo-dev/frimo-messenger/internal/service/user"
+	"github.com/frimo-dev/frimo-messenger/internal/service/auth"
 	"go.uber.org/zap"
 )
 
@@ -53,15 +52,12 @@ func main() {
 		logger.Fatal("failed creation verification token cipher", zap.Error(err))
 	}
 
-	userRepository := postgres.NewUserRepository(databasePool)
+	authRepository := postgres.NewAuthRepository(databasePool)
 	passwordHasher := password.NewArgon2Hasher()
 	tokenGenerator := token.NewGenerator()
-	userService := user.NewService(userRepository, passwordHasher, tokenGenerator, verificationTokenCipher, time.Now, cfg.VerificationTokenLifetime)
+	authService := auth.NewService(authRepository, passwordHasher, tokenGenerator, verificationTokenCipher, time.Now, cfg.VerificationTokenLifetime)
 
-	emailVerificationRepository := postgres.NewEmailVerificationRepository(databasePool)
-	emailVerificationService := emailverification.NewService(emailVerificationRepository, time.Now)
-
-	api := httpapi.New(logger, userService, emailVerificationService)
+	api := httpapi.New(logger, authService)
 
 	server := &http.Server{
 		Addr:              cfg.HTTP.Address,

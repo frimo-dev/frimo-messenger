@@ -1,4 +1,4 @@
-package emailverification
+package auth
 
 import "errors"
 
@@ -13,3 +13,15 @@ var (
 	ErrUsedToken    = errors.New("verification token already used")
 	ErrRevokedToken = errors.New("verification token is revoked")
 )
+
+var ErrEmailAlreadyExists = errors.New("email already exists")
+
+type ValidationError struct {
+	Code    string
+	Field   string
+	Message string
+}
+
+func (e ValidationError) Error() string {
+	return e.Message
+}

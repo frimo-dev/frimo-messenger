@@ -1,4 +1,4 @@
-package emailverification
+package auth
 
 import (
 	"context"
