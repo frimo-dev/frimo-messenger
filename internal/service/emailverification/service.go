@@ -29,3 +29,7 @@ func (s *Service) Confirm(ctx context.Context, rawToken string) error {
 
 	return s.repository.Confirm(ctx, tokenHash, s.now().UTC())
 }
+
+func (s *Service) ResendVerificationToken(ctx context.Context, email string) error {
+	return nil
+}

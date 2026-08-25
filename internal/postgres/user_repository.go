@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 
-	user2 "github.com/frimo-dev/frimo-messenger/internal/service/user"
+	"github.com/frimo-dev/frimo-messenger/internal/service/user"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -23,10 +23,10 @@ func NewUserRepository(pool *pgxpool.Pool) *UserRepository {
 	}
 }
 
-func (ur *UserRepository) Create(ctx context.Context, input user2.CreationInput) (user2.User, error) {
+func (ur *UserRepository) Create(ctx context.Context, input user.CreationInput) (user.User, error) {
 	tx, err := ur.pool.Begin(ctx)
 	if err != nil {
-		return user2.User{}, fmt.Errorf("create transaction: %w", err)
+		return user.User{}, fmt.Errorf("create transaction: %w", err)
 	}
 
 	defer func() {
@@ -52,10 +52,10 @@ func (ur *UserRepository) Create(ctx context.Context, input user2.CreationInput)
 	)
 	if err != nil {
 		if isEmailUniqueViolation(err) {
-			return user2.User{}, user2.ErrEmailAlreadyExists
+			return user.User{}, user.ErrEmailAlreadyExists
 		}
 
-		return user2.User{}, fmt.Errorf("insert user: %w", err)
+		return user.User{}, fmt.Errorf("insert user: %w", err)
 	}
 
 	const insertVerificationQuery = `
@@ -71,7 +71,7 @@ func (ur *UserRepository) Create(ctx context.Context, input user2.CreationInput)
 
 	_, err = tx.Exec(ctx, insertVerificationQuery, input.VerificationID, input.ID, input.VerificationTokenHash, input.VerificationTokenCiphertext, input.VerificationExpiresAt, input.CreatedAt)
 	if err != nil {
-		return user2.User{}, fmt.Errorf("insert verification: %w", err)
+		return user.User{}, fmt.Errorf("insert verification: %w", err)
 	}
 
 	const insertOutboxQuery = `
@@ -95,15 +95,15 @@ func (ur *UserRepository) Create(ctx context.Context, input user2.CreationInput)
 		input.OutboxEvent.AvailableAt,
 	)
 	if err != nil {
-		return user2.User{}, fmt.Errorf("insert outbox event: %w", err)
+		return user.User{}, fmt.Errorf("insert outbox event: %w", err)
 	}
 
 	err = tx.Commit(ctx)
 	if err != nil {
-		return user2.User{}, fmt.Errorf("commit transaction: %w", err)
+		return user.User{}, fmt.Errorf("commit transaction: %w", err)
 	}
 
-	return user2.User{ID: input.ID, Email: input.Email, CreatedAt: input.CreatedAt}, nil
+	return user.User{ID: input.ID, Email: input.Email, CreatedAt: input.CreatedAt}, nil
 }
 
 func isEmailUniqueViolation(err error) bool {
@@ -117,4 +117,4 @@ func isEmailUniqueViolation(err error) bool {
 		postgresError.ConstraintName == "users_email_unique_idx"
 }
 
-var _ user2.Repository = (*UserRepository)(nil)
+var _ user.Repository = (*UserRepository)(nil)

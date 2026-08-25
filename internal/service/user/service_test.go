@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	user2 "github.com/frimo-dev/frimo-messenger/internal/service/user"
+	"github.com/frimo-dev/frimo-messenger/internal/service/user"
 	"github.com/google/uuid"
 )
 
@@ -44,21 +44,21 @@ func (g *spyTokenGenerator) Generate() (string, []byte, error) {
 }
 
 type spyUserRepository struct {
-	receivedInput user2.CreationInput
-	createdUser   user2.User
+	receivedInput user.CreationInput
+	createdUser   user.User
 	err           error
 	called        bool
 }
 
 func (r *spyUserRepository) Create(
 	_ context.Context,
-	input user2.CreationInput,
-) (user2.User, error) {
+	input user.CreationInput,
+) (user.User, error) {
 	r.called = true
 	r.receivedInput = input
 
 	if r.err != nil {
-		return user2.User{}, r.err
+		return user.User{}, r.err
 	}
 
 	return r.createdUser, nil
@@ -106,7 +106,7 @@ func TestServiceRegisterCreatesUserAndVerificationToken(t *testing.T) {
 	)
 
 	repository := &spyUserRepository{
-		createdUser: user2.User{
+		createdUser: user.User{
 			ID:        "user-id",
 			Email:     "misha@example.com",
 			CreatedAt: now,
@@ -126,7 +126,7 @@ func TestServiceRegisterCreatesUserAndVerificationToken(t *testing.T) {
 		ciphertext: []byte("encrypted-token"),
 	}
 
-	service := user2.NewService(
+	service := user.NewService(
 		repository,
 		passwordHasher,
 		tokenGenerator,
@@ -137,7 +137,7 @@ func TestServiceRegisterCreatesUserAndVerificationToken(t *testing.T) {
 
 	user, err := service.Register(
 		context.Background(),
-		user2.RegistrationInput{
+		user.RegistrationInput{
 			Email:    "  Misha@Example.com  ",
 			Password: "long-secret-password",
 		},
