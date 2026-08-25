@@ -29,6 +29,10 @@ func (r *spyRepository) Confirm(
 	return r.err
 }
 
+func (r *spyRepository) ResendVerificationToken(_ context.Context, input emailverification.ResendInput) error {
+	return nil
+}
+
 func TestServiceConfirmHashesTokenAndConfirmsVerification(
 	t *testing.T,
 ) {
