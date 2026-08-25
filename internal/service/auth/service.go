@@ -8,11 +8,11 @@ import (
 	"strings"
 	"time"
 	"unicode/utf8"
+	"uuid"
 
 	"github.com/frimo-dev/frimo-messenger/internal/dto"
 	"github.com/frimo-dev/frimo-messenger/internal/outbox"
 	"github.com/frimo-dev/frimo-messenger/internal/security/token"
-	"github.com/google/uuid"
 )
 
 type PasswordHasher interface {
@@ -69,10 +69,10 @@ func (s *Service) Register(ctx context.Context, input RegistrationInput) (User, 
 	}
 
 	now := s.now().UTC()
-	userID := uuid.NewString()
-	verificationID := uuid.NewString()
-
-	tokenCiphertext, err := s.tokenCipher.Encrypt([]byte(rawToken), []byte(verificationID))
+	userID := uuid.New()
+	verificationID := uuid.New()
+	
+	tokenCiphertext, err := s.tokenCipher.Encrypt([]byte(rawToken), verificationID[:])
 	if err != nil {
 		return User{}, fmt.Errorf("encrypt verification token: %w", err)
 	}
@@ -88,25 +88,27 @@ func (s *Service) Register(ctx context.Context, input RegistrationInput) (User, 
 		return User{}, fmt.Errorf("marshal verification event: %w", err)
 	}
 
-	createdUser, err := s.repository.Create(
+	createdUser, err := s.repository.CreateUser(
 		ctx,
-		CreationInput{
+		CreateUserInput{
 			ID:           userID,
 			Email:        email,
 			PasswordHash: passwordHash,
 			CreatedAt:    now,
 
-			VerificationID:              verificationID,
-			VerificationTokenHash:       tokenHash,
-			VerificationTokenCiphertext: tokenCiphertext,
-			VerificationExpiresAt:       now.Add(s.verificationTokenLifetime),
+			Verification: VerificationInput{
+				ID:              verificationID,
+				TokenHash:       tokenHash,
+				TokenCiphertext: tokenCiphertext,
+				ExpiresAt:       now.Add(s.verificationTokenLifetime),
 
-			OutboxEvent: outbox.Event{
-				ID:          uuid.NewString(),
-				Type:        dto.EmailVerificationRequestedType,
-				Payload:     eventPayload,
-				CreatedAt:   now,
-				AvailableAt: now,
+				OutboxEvent: outbox.Event{
+					ID:          uuid.New(),
+					Type:        dto.EmailVerificationRequestedType,
+					Payload:     eventPayload,
+					CreatedAt:   now,
+					AvailableAt: now,
+				},
 			},
 		},
 	)
@@ -125,10 +127,16 @@ func (s *Service) Confirm(ctx context.Context, rawToken string) error {
 
 	tokenHash := token.Hash(rawToken)
 
-	return s.repository.Confirm(ctx, tokenHash, s.now().UTC())
+	return s.repository.ConfirmEmail(ctx, tokenHash, s.now().UTC())
 }
 
 func (s *Service) ResendVerificationToken(ctx context.Context, email string) error {
+	email = normalizeEmail(email)
+
+	if err := validateEmail(email); err != nil {
+		return err
+	}
+
 	return nil
 }
 

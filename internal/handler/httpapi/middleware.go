@@ -4,8 +4,8 @@ import (
 	"net/http"
 	"runtime/debug"
 	"time"
+	"uuid"
 
-	"github.com/google/uuid"
 	"go.uber.org/zap"
 )
 
@@ -68,9 +68,9 @@ func RecoveryMiddleware(logger *zap.Logger, next http.Handler) http.Handler {
 func RequestLoggingMiddleware(logger *zap.Logger, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		startedAt := time.Now()
-		requestID := uuid.NewString()
+		requestID := uuid.New()
 
-		ctx := withRequestID(r.Context(), requestID)
+		ctx := withRequestID(r.Context(), requestID.String())
 		r = r.WithContext(ctx)
 
 		writer := &responseWriter{ResponseWriter: w, status: http.StatusOK}
@@ -78,7 +78,7 @@ func RequestLoggingMiddleware(logger *zap.Logger, next http.Handler) http.Handle
 
 		logger.Info(
 			"http request completed",
-			zap.String(string(requestIDKey), requestID),
+			zap.String(string(requestIDKey), requestID.String()),
 			zap.String("method", r.Method),
 			zap.String("path", r.URL.Path),
 			zap.Int("status", writer.status),

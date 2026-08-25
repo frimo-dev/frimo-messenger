@@ -5,8 +5,8 @@ import (
 	"errors"
 	"math/rand"
 	"time"
+	"uuid"
 
-	"github.com/google/uuid"
 	"go.uber.org/zap"
 )
 
@@ -20,16 +20,16 @@ var ErrNoEvents = errors.New("no outbox dto")
 
 type Repository interface {
 	// ClaimNext находит следующее готовое событие и закрепляет его за этим worker’ом(атомарная операция)
-	ClaimNext(ctx context.Context, lockID string, now time.Time, lockExpiredBefore time.Time) (Event, error)
+	ClaimNext(ctx context.Context, lockID uuid.UUID, now time.Time, lockExpiredBefore time.Time) (Event, error)
 
 	// MarkProcessed помечает событие успешно обработанным, после этого событие больше не выбирается worker’ами
-	MarkProcessed(ctx context.Context, eventID string, lockID string, processedAt time.Time) error
+	MarkProcessed(ctx context.Context, eventID uuid.UUID, lockID uuid.UUID, processedAt time.Time) error
 
 	// ScheduleRetry помечает событие доступным через определенный промежуток времени
-	ScheduleRetry(ctx context.Context, eventID string, lockID string, availableAt time.Time, lastError string) error
+	ScheduleRetry(ctx context.Context, eventID uuid.UUID, lockID uuid.UUID, availableAt time.Time, lastError string) error
 
 	// MarkFailed помечает событие не выполняемым
-	MarkFailed(ctx context.Context, eventID string, lockID string, failedAt time.Time, lastError string) error
+	MarkFailed(ctx context.Context, eventID uuid.UUID, lockID uuid.UUID, failedAt time.Time, lastError string) error
 }
 
 type Processor struct {
@@ -89,7 +89,7 @@ func (p *Processor) Run(ctx context.Context) error {
 
 func (p *Processor) processOne(ctx context.Context) (bool, error) {
 	now := p.now().UTC()
-	lockID := uuid.NewString()
+	lockID := uuid.New()
 
 	event, err := p.repository.ClaimNext(ctx, lockID, now, now.Add(-p.lockLease))
 	if err != nil {
@@ -114,7 +114,7 @@ func (p *Processor) processOne(ctx context.Context) (bool, error) {
 			p.logger.Error(
 				"outbox event permanently failed",
 				zap.Error(handleErr),
-				zap.String("event_id", event.ID),
+				zap.String("event_id", event.ID.String()),
 				zap.String("event_type", event.Type),
 				zap.Int("attempts", event.Attempts),
 			)

@@ -3,7 +3,6 @@ module github.com/frimo-dev/frimo-messenger
 go 1.27
 
 require (
-	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.10.0
 	go.uber.org/zap v1.28.0
 	golang.org/x/crypto v0.55.0

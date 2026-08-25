@@ -2,9 +2,9 @@ package auth
 
 import (
 	"context"
-	"strconv"
 	"sync"
 	"time"
+	"uuid"
 )
 
 type memoryUser struct {
@@ -43,7 +43,7 @@ func (mr *MemoryRepository) Create(ctx context.Context, email string, passwordHa
 	mr.counter++
 
 	createdUser := User{
-		ID:        strconv.FormatUint(mr.counter, 10),
+		ID:        uuid.New(),
 		Email:     email,
 		CreatedAt: time.Now().UTC(),
 	}

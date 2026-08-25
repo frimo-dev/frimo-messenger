@@ -80,11 +80,11 @@ func (a *API) registerUser(w http.ResponseWriter, r *http.Request) {
 	a.logger.Info(
 		"user registered successfully",
 		zap.String(string(requestIDKey), requestIDFromContext(r.Context())),
-		zap.String("user_id", createdUser.ID),
+		zap.String("user_id", createdUser.ID.String()),
 	)
 
 	a.respondJSON(r.Context(), w, http.StatusAccepted, registerResponse{
-		ID:    createdUser.ID,
+		ID:    createdUser.ID.String(),
 		Email: createdUser.Email,
 	})
 }

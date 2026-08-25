@@ -3,10 +3,11 @@ package outbox
 import (
 	"encoding/json"
 	"time"
+	"uuid"
 )
 
 type Event struct {
-	ID          string
+	ID          uuid.UUID
 	Type        string
 	Payload     json.RawMessage
 	CreatedAt   time.Time

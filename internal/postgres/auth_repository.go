@@ -24,7 +24,7 @@ func NewAuthRepository(pool *pgxpool.Pool) *AuthRepository {
 	return &AuthRepository{pool: pool}
 }
 
-func (r *AuthRepository) Create(ctx context.Context, input auth.CreationInput) (auth.User, error) {
+func (r *AuthRepository) CreateUser(ctx context.Context, input auth.CreateUserInput) (auth.User, error) {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
 		return auth.User{}, fmt.Errorf("create transaction: %w", err)
@@ -70,7 +70,7 @@ func (r *AuthRepository) Create(ctx context.Context, input auth.CreationInput) (
 		)
 		VALUES ($1, $2, $3, $4, $5, $6)`
 
-	_, err = tx.Exec(ctx, insertVerificationQuery, input.VerificationID, input.ID, input.VerificationTokenHash, input.VerificationTokenCiphertext, input.VerificationExpiresAt, input.CreatedAt)
+	_, err = tx.Exec(ctx, insertVerificationQuery, input.Verification.ID, input.ID, input.Verification.TokenHash, input.Verification.TokenCiphertext, input.Verification.ExpiresAt, input.CreatedAt)
 	if err != nil {
 		return auth.User{}, fmt.Errorf("insert verification: %w", err)
 	}
@@ -89,11 +89,11 @@ func (r *AuthRepository) Create(ctx context.Context, input auth.CreationInput) (
 	_, err = tx.Exec(
 		ctx,
 		insertOutboxQuery,
-		input.OutboxEvent.ID,
-		input.OutboxEvent.Type,
-		input.OutboxEvent.Payload,
-		input.OutboxEvent.CreatedAt,
-		input.OutboxEvent.AvailableAt,
+		input.Verification.OutboxEvent.ID,
+		input.Verification.OutboxEvent.Type,
+		input.Verification.OutboxEvent.Payload,
+		input.Verification.OutboxEvent.CreatedAt,
+		input.Verification.OutboxEvent.AvailableAt,
 	)
 	if err != nil {
 		return auth.User{}, fmt.Errorf("insert outbox event: %w", err)
@@ -107,7 +107,7 @@ func (r *AuthRepository) Create(ctx context.Context, input auth.CreationInput) (
 	return auth.User{ID: input.ID, Email: input.Email, CreatedAt: input.CreatedAt}, nil
 }
 
-func (r *AuthRepository) Confirm(ctx context.Context, tokenHash []byte, confirmedAt time.Time) error {
+func (r *AuthRepository) ConfirmEmail(ctx context.Context, tokenHash []byte, confirmedAt time.Time) error {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("failed begin email verification transaction: %w", err)
@@ -217,8 +217,8 @@ func (r *AuthRepository) Confirm(ctx context.Context, tokenHash []byte, confirme
 	return nil
 }
 
-// ResendVerificationToken TODO: вынести лимиты cooldown в config
-func (r *AuthRepository) ResendVerificationToken(ctx context.Context, input auth.ResendInput) error {
+// ResendVerification TODO: вынести лимиты cooldown в config
+func (r *AuthRepository) ResendVerification(ctx context.Context, input auth.ResendVerificationInput) error {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("failed begin resend verification token transaction: %w", err)
@@ -257,7 +257,7 @@ func (r *AuthRepository) ResendVerificationToken(ctx context.Context, input auth
 
 	var count int
 
-	if err := tx.QueryRow(ctx, selectLastHourCreatedQuery, userID, input.ResendAt).Scan(&count); err != nil {
+	if err := tx.QueryRow(ctx, selectLastHourCreatedQuery, userID, input.RequestedAt).Scan(&count); err != nil {
 		return fmt.Errorf("failed counting verification tokens: %w", err)
 	}
 
@@ -278,7 +278,7 @@ func (r *AuthRepository) ResendVerificationToken(ctx context.Context, input auth
 		return fmt.Errorf("failed selecting last created verification token: %w", err)
 	}
 
-	if createdAt != nil && input.ResendAt.Sub(*createdAt) < time.Minute {
+	if createdAt != nil && input.RequestedAt.Sub(*createdAt) < time.Minute {
 		return auth.ErrResendCooldown
 	}
 
@@ -292,7 +292,7 @@ func (r *AuthRepository) ResendVerificationToken(ctx context.Context, input auth
 			AND expires_at > $2
 	`
 
-	if _, err := tx.Exec(ctx, updateEmailVerificationQuery, userID, input.ResendAt); err != nil {
+	if _, err := tx.Exec(ctx, updateEmailVerificationQuery, userID, input.RequestedAt); err != nil {
 		return fmt.Errorf("failed revoke email verification: %w", err)
 	}
 
@@ -310,12 +310,12 @@ func (r *AuthRepository) ResendVerificationToken(ctx context.Context, input auth
 	_, err = tx.Exec(
 		ctx,
 		insertVerificationQuery,
-		input.VerificationID,
+		input.Verification.ID,
 		userID,
-		input.VerificationTokenHash,
-		input.VerificationTokenCiphertext,
-		input.VerificationExpiresAt,
-		input.ResendAt,
+		input.Verification.TokenHash,
+		input.Verification.TokenCiphertext,
+		input.Verification.ExpiresAt,
+		input.RequestedAt,
 	)
 	if err != nil {
 		return fmt.Errorf("failed insert verification: %w", err)
@@ -335,11 +335,11 @@ func (r *AuthRepository) ResendVerificationToken(ctx context.Context, input auth
 	_, err = tx.Exec(
 		ctx,
 		insertOutboxQuery,
-		input.OutboxEvent.ID,
-		input.OutboxEvent.Type,
-		input.OutboxEvent.Payload,
-		input.OutboxEvent.CreatedAt,
-		input.OutboxEvent.AvailableAt,
+		input.Verification.OutboxEvent.ID,
+		input.Verification.OutboxEvent.Type,
+		input.Verification.OutboxEvent.Payload,
+		input.Verification.OutboxEvent.CreatedAt,
+		input.Verification.OutboxEvent.AvailableAt,
 	)
 	if err != nil {
 		return fmt.Errorf("failed insert outbox event: %w", err)
@@ -353,7 +353,7 @@ func (r *AuthRepository) ResendVerificationToken(ctx context.Context, input auth
 	return nil
 }
 
-func (r *AuthRepository) GetForDelivery(ctx context.Context, verificationID string) (auth.DeliveryData, error) {
+func (r *AuthRepository) GetForDelivery(ctx context.Context, verificationID uuid.UUID) (auth.DeliveryData, error) {
 	const query = `
 		SELECT
 			id,

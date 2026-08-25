@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"time"
+	"uuid"
 
 	"github.com/frimo-dev/frimo-messenger/internal/outbox"
 	"github.com/jackc/pgx/v5"
@@ -19,7 +20,7 @@ func NewOutboxRepository(pool *pgxpool.Pool) *OutboxRepository {
 	return &OutboxRepository{pool: pool}
 }
 
-func (r *OutboxRepository) ClaimNext(ctx context.Context, lockID string, now time.Time, lockExpiredBefore time.Time) (outbox.Event, error) {
+func (r *OutboxRepository) ClaimNext(ctx context.Context, lockID uuid.UUID, now time.Time, lockExpiredBefore time.Time) (outbox.Event, error) {
 	const query = `
 		WITH candidate AS (
 			SELECT id
@@ -73,7 +74,7 @@ func (r *OutboxRepository) ClaimNext(ctx context.Context, lockID string, now tim
 	return event, nil
 }
 
-func (r *OutboxRepository) MarkProcessed(ctx context.Context, eventID string, lockID string, processedAt time.Time) error {
+func (r *OutboxRepository) MarkProcessed(ctx context.Context, eventID uuid.UUID, lockID uuid.UUID, processedAt time.Time) error {
 	const query = `
 		UPDATE outbox_events
 		SET
@@ -100,7 +101,7 @@ func (r *OutboxRepository) MarkProcessed(ctx context.Context, eventID string, lo
 	return nil
 }
 
-func (r *OutboxRepository) ScheduleRetry(ctx context.Context, eventID string, lockID string, availableAt time.Time, lastError string) error {
+func (r *OutboxRepository) ScheduleRetry(ctx context.Context, eventID uuid.UUID, lockID uuid.UUID, availableAt time.Time, lastError string) error {
 	const query = `
 		UPDATE outbox_events
 		SET
@@ -126,7 +127,7 @@ func (r *OutboxRepository) ScheduleRetry(ctx context.Context, eventID string, lo
 	return nil
 }
 
-func (r *OutboxRepository) MarkFailed(ctx context.Context, eventID string, lockID string, failedAt time.Time, lastError string) error {
+func (r *OutboxRepository) MarkFailed(ctx context.Context, eventID uuid.UUID, lockID uuid.UUID, failedAt time.Time, lastError string) error {
 	const query = `
 		UPDATE outbox_events
 		SET

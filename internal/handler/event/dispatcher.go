@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"strings"
 	"time"
+	"uuid"
 
 	"github.com/frimo-dev/frimo-messenger/internal/dto"
 	"github.com/frimo-dev/frimo-messenger/internal/outbox"
@@ -65,7 +66,7 @@ func (d *Dispatcher) handleEmailVerificationRequested(ctx context.Context, event
 		return errors.Join(outbox.ErrNonRetryable, err)
 	}
 
-	if payload.VerificationID == "" {
+	if payload.VerificationID == uuid.Nil() {
 		return errors.Join(outbox.ErrNonRetryable, errors.New("verification ID is empty"))
 	}
 
@@ -88,7 +89,7 @@ func (d *Dispatcher) handleEmailVerificationRequested(ctx context.Context, event
 		return nil
 	}
 
-	rawToken, err := d.tokenCipher.Decrypt(data.TokenCiphertext, []byte(data.ID))
+	rawToken, err := d.tokenCipher.Decrypt(data.TokenCiphertext, data.ID[:])
 	if err != nil {
 		return fmt.Errorf("failed to decrypt verification token: %w", err)
 	}

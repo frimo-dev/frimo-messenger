@@ -1,8 +1,10 @@
 package dto
 
+import "uuid"
+
 const EmailVerificationRequestedType = "email.verification.requested"
 
 type EmailVerificationRequested struct {
-	VerificationID string `json:"verification_id"`
-	Recipient      string `json:"recipient"`
+	VerificationID uuid.UUID `json:"verification_id"`
+	Recipient      string    `json:"recipient"`
 }

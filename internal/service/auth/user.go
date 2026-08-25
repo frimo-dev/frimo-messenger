@@ -2,10 +2,11 @@ package auth
 
 import (
 	"time"
+	"uuid"
 )
 
 type User struct {
-	ID        string
+	ID        uuid.UUID
 	Email     string
 	CreatedAt time.Time
 }

@@ -5,10 +5,10 @@ import (
 	"context"
 	"testing"
 	"time"
+	"uuid"
 
 	"github.com/frimo-dev/frimo-messenger/internal/security/token"
 	"github.com/frimo-dev/frimo-messenger/internal/service/auth"
-	"github.com/google/uuid"
 )
 
 type spyPasswordHasher struct {
@@ -45,19 +45,19 @@ func (g *spyTokenGenerator) Generate() (string, []byte, error) {
 }
 
 type spyRepository struct {
-	receivedInput auth.CreationInput
+	receivedInput auth.CreateUserInput
 	createdUser   auth.User
 
 	receivedTokenHash   []byte
 	receivedConfirmedAt time.Time
 
-	err           error
-	called        bool
+	err    error
+	called bool
 }
 
-func (r *spyRepository) Create(
+func (r *spyRepository) CreateUser(
 	_ context.Context,
-	input auth.CreationInput,
+	input auth.CreateUserInput,
 ) (auth.User, error) {
 	r.called = true
 	r.receivedInput = input
@@ -69,7 +69,7 @@ func (r *spyRepository) Create(
 	return r.createdUser, nil
 }
 
-func (r *spyRepository) Confirm(
+func (r *spyRepository) ConfirmEmail(
 	_ context.Context,
 	tokenHash []byte,
 	confirmedAt time.Time,
@@ -81,7 +81,7 @@ func (r *spyRepository) Confirm(
 	return r.err
 }
 
-func (r *spyRepository) ResendVerificationToken(_ context.Context, input auth.ResendInput) error {
+func (r *spyRepository) ResendVerification(_ context.Context, input auth.ResendVerificationInput) error {
 	return nil
 }
 
@@ -126,9 +126,11 @@ func TestServiceRegisterCreatesUserAndVerificationToken(t *testing.T) {
 		time.UTC,
 	)
 
+	userID := uuid.New()
+
 	repository := &spyRepository{
 		createdUser: auth.User{
-			ID:        "user-id",
+			ID:        userID,
 			Email:     "misha@example.com",
 			CreatedAt: now,
 		},
@@ -202,31 +204,24 @@ func TestServiceRegisterCreatesUserAndVerificationToken(t *testing.T) {
 	}
 
 	if !bytes.Equal(
-		repository.receivedInput.VerificationTokenHash,
+		repository.receivedInput.Verification.TokenHash,
 		[]byte("verification-token-hash"),
 	) {
 		t.Fatalf(
 			"unexpected verification token hash: %q",
-			repository.receivedInput.VerificationTokenHash,
+			repository.receivedInput.Verification.TokenHash,
 		)
 	}
 
-	if repository.receivedInput.ID == "" {
+	if repository.receivedInput.ID == uuid.Nil() {
 		t.Fatal("expected generated user ID")
 	}
 
-	if _, err := uuid.Parse(repository.receivedInput.ID); err != nil {
-		t.Fatalf(
-			"expected valid user UUID, got %q",
-			repository.receivedInput.ID,
-		)
-	}
-
-	if repository.receivedInput.VerificationID == "" {
+	if repository.receivedInput.Verification.ID == uuid.Nil() {
 		t.Fatal("expected generated verification ID")
 	}
 
-	if user.ID != "user-id" {
+	if user.ID != userID {
 		t.Fatalf(
 			"expected user ID %q, got %q",
 			"user-id",
