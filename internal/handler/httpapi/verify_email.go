@@ -26,7 +26,7 @@ func (a *API) verifyEmail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err := a.authService.Confirm(r.Context(), rawToken)
+	err := a.authService.ConfirmEmail(r.Context(), rawToken)
 	if err != nil {
 		switch {
 		case errors.Is(err, auth.ErrInvalidToken):

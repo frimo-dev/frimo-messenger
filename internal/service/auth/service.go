@@ -63,29 +63,12 @@ func (s *Service) Register(ctx context.Context, input RegistrationInput) (User, 
 		return User{}, fmt.Errorf("hash password: %w", err)
 	}
 
-	rawToken, tokenHash, err := s.tokenGenerator.Generate()
-	if err != nil {
-		return User{}, fmt.Errorf("generate verification token: %w", err)
-	}
-
 	now := s.now().UTC()
 	userID := uuid.New()
-	verificationID := uuid.New()
-	
-	tokenCiphertext, err := s.tokenCipher.Encrypt([]byte(rawToken), verificationID[:])
-	if err != nil {
-		return User{}, fmt.Errorf("encrypt verification token: %w", err)
-	}
 
-	eventPayload, err := json.Marshal(
-		dto.EmailVerificationRequested{
-			VerificationID: verificationID,
-			Recipient:      email,
-		},
-	)
-
+	verificationInput, outboxEvent, err := s.prepareEmailVerification(email, now)
 	if err != nil {
-		return User{}, fmt.Errorf("marshal verification event: %w", err)
+		return User{}, err
 	}
 
 	createdUser, err := s.repository.CreateUser(
@@ -96,23 +79,11 @@ func (s *Service) Register(ctx context.Context, input RegistrationInput) (User, 
 			PasswordHash: passwordHash,
 			CreatedAt:    now,
 
-			Verification: VerificationInput{
-				ID:              verificationID,
-				TokenHash:       tokenHash,
-				TokenCiphertext: tokenCiphertext,
-				ExpiresAt:       now.Add(s.verificationTokenLifetime),
+			Verification: verificationInput,
 
-				OutboxEvent: outbox.Event{
-					ID:          uuid.New(),
-					Type:        dto.EmailVerificationRequestedType,
-					Payload:     eventPayload,
-					CreatedAt:   now,
-					AvailableAt: now,
-				},
-			},
+			OutboxEvent: outboxEvent,
 		},
 	)
-
 	if err != nil {
 		return User{}, err
 	}
@@ -120,7 +91,7 @@ func (s *Service) Register(ctx context.Context, input RegistrationInput) (User, 
 	return createdUser, nil
 }
 
-func (s *Service) Confirm(ctx context.Context, rawToken string) error {
+func (s *Service) ConfirmEmail(ctx context.Context, rawToken string) error {
 	if rawToken == "" {
 		return ErrInvalidToken
 	}
@@ -130,14 +101,85 @@ func (s *Service) Confirm(ctx context.Context, rawToken string) error {
 	return s.repository.ConfirmEmail(ctx, tokenHash, s.now().UTC())
 }
 
-func (s *Service) ResendVerificationToken(ctx context.Context, email string) error {
+func (s *Service) ResendVerification(ctx context.Context, email string) error {
 	email = normalizeEmail(email)
 
 	if err := validateEmail(email); err != nil {
 		return err
 	}
 
+	now := s.now().UTC()
+
+	verificationInput, outboxEvent, err := s.prepareEmailVerification(email, now)
+	if err != nil {
+		return err
+	}
+
+	err = s.repository.ResendVerification(
+		ctx,
+		ResendVerificationInput{
+			Email:       email,
+			RequestedAt: now,
+
+			Verification: verificationInput,
+
+			OutboxEvent: outboxEvent,
+		},
+	)
+	if err != nil {
+		return err
+	}
+
 	return nil
+}
+
+func (s *Service) generateVerificationInput(now time.Time) (VerificationInput, error) {
+	rawToken, tokenHash, err := s.tokenGenerator.Generate()
+	if err != nil {
+		return VerificationInput{}, fmt.Errorf("generate verification token: %w", err)
+	}
+
+	verificationID := uuid.New()
+
+	tokenCiphertext, err := s.tokenCipher.Encrypt([]byte(rawToken), verificationID[:])
+	if err != nil {
+		return VerificationInput{}, fmt.Errorf("encrypt verification token: %w", err)
+	}
+
+	return VerificationInput{
+		ID:              verificationID,
+		TokenHash:       tokenHash,
+		TokenCiphertext: tokenCiphertext,
+		ExpiresAt:       now.Add(s.verificationTokenLifetime),
+	}, nil
+}
+
+func (s *Service) prepareEmailVerification(email string, now time.Time) (VerificationInput, outbox.Event, error) {
+	verification, err := s.generateVerificationInput(now)
+	if err != nil {
+		return VerificationInput{}, outbox.Event{}, err
+	}
+
+	payload, err := json.Marshal(
+		dto.EmailVerificationRequested{
+			VerificationID: verification.ID,
+			Recipient:      email,
+		},
+	)
+	if err != nil {
+		return VerificationInput{}, outbox.Event{},
+			fmt.Errorf("marshal verification event: %w", err)
+	}
+
+	event := outbox.Event{
+		ID:          uuid.New(),
+		Type:        dto.EmailVerificationRequestedType,
+		Payload:     payload,
+		CreatedAt:   now,
+		AvailableAt: now,
+	}
+
+	return verification, event, nil
 }
 
 func normalizeEmail(email string) string {

@@ -276,7 +276,7 @@ func TestServiceConfirmHashesTokenAndConfirmsVerification(t *testing.T) {
 
 	rawToken := "raw-verification-token"
 
-	err := service.Confirm(
+	err := service.ConfirmEmail(
 		context.Background(),
 		rawToken,
 	)

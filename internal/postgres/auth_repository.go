@@ -89,11 +89,11 @@ func (r *AuthRepository) CreateUser(ctx context.Context, input auth.CreateUserIn
 	_, err = tx.Exec(
 		ctx,
 		insertOutboxQuery,
-		input.Verification.OutboxEvent.ID,
-		input.Verification.OutboxEvent.Type,
-		input.Verification.OutboxEvent.Payload,
-		input.Verification.OutboxEvent.CreatedAt,
-		input.Verification.OutboxEvent.AvailableAt,
+		input.OutboxEvent.ID,
+		input.OutboxEvent.Type,
+		input.OutboxEvent.Payload,
+		input.OutboxEvent.CreatedAt,
+		input.OutboxEvent.AvailableAt,
 	)
 	if err != nil {
 		return auth.User{}, fmt.Errorf("insert outbox event: %w", err)
@@ -335,11 +335,11 @@ func (r *AuthRepository) ResendVerification(ctx context.Context, input auth.Rese
 	_, err = tx.Exec(
 		ctx,
 		insertOutboxQuery,
-		input.Verification.OutboxEvent.ID,
-		input.Verification.OutboxEvent.Type,
-		input.Verification.OutboxEvent.Payload,
-		input.Verification.OutboxEvent.CreatedAt,
-		input.Verification.OutboxEvent.AvailableAt,
+		input.OutboxEvent.ID,
+		input.OutboxEvent.Type,
+		input.OutboxEvent.Payload,
+		input.OutboxEvent.CreatedAt,
+		input.OutboxEvent.AvailableAt,
 	)
 	if err != nil {
 		return fmt.Errorf("failed insert outbox event: %w", err)

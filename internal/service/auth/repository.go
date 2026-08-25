@@ -13,8 +13,6 @@ type VerificationInput struct {
 	TokenHash       []byte
 	TokenCiphertext []byte
 	ExpiresAt       time.Time
-
-	OutboxEvent outbox.Event
 }
 
 type CreateUserInput struct {
@@ -24,6 +22,7 @@ type CreateUserInput struct {
 	CreatedAt    time.Time
 
 	Verification VerificationInput
+	OutboxEvent  outbox.Event
 }
 
 type ResendVerificationInput struct {
@@ -31,6 +30,7 @@ type ResendVerificationInput struct {
 	RequestedAt time.Time
 
 	Verification VerificationInput
+	OutboxEvent  outbox.Event
 }
 
 type Repository interface {
