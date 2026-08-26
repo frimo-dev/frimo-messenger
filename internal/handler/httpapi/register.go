@@ -1,11 +1,9 @@
 package httpapi
 
 import (
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
-	"io"
 	"net/http"
-	"strings"
 
 	"github.com/frimo-dev/frimo-messenger/internal/service/auth"
 	"go.uber.org/zap"
@@ -92,53 +90,5 @@ func (a *API) registerUser(w http.ResponseWriter, r *http.Request) {
 func decodeJSON(w http.ResponseWriter, r *http.Request, destination any) error {
 	r.Body = http.MaxBytesReader(w, r.Body, maxRegisterBodySize)
 
-	decoder := json.NewDecoder(r.Body)
-	decoder.DisallowUnknownFields()
-
-	if err := decoder.Decode(destination); err != nil {
-		return classifyJSONError(err)
-	}
-
-	// Проверяем, что второго JSON объекта нет, кроме пробельных символов и конца тела
-	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
-		return errors.New("request body must contain a single JSON object")
-	}
-
-	return nil
-}
-
-func classifyJSONError(err error) error {
-	var syntaxError *json.SyntaxError
-
-	if errors.As(err, &syntaxError) {
-		return errors.New("request body contains malformed JSON")
-	}
-
-	var typeError *json.UnmarshalTypeError
-
-	if errors.As(err, &typeError) {
-		if typeError.Field != "" {
-			return errors.New(
-				"request field " + typeError.Field + " has an invalid type",
-			)
-		}
-
-		return errors.New("request contains a value of an invalid type")
-	}
-
-	if errors.Is(err, io.EOF) {
-		return errors.New("request body must not be empty")
-	}
-
-	var maxBytesError *http.MaxBytesError
-
-	if errors.As(err, &maxBytesError) {
-		return errors.New("request body is too large")
-	}
-
-	if strings.HasPrefix(err.Error(), "json: unknown field ") {
-		return errors.New("request contains an unknown field")
-	}
-
-	return errors.New("request body could not be decoded")
+	return json.UnmarshalRead(r.Body, destination, json.RejectUnknownMembers(true))
 }
