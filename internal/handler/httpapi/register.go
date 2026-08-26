@@ -27,7 +27,7 @@ func (a *API) registerUser(w http.ResponseWriter, r *http.Request) {
 	var request registerRequest
 
 	if err := decodeJSON(w, r, &request); err != nil {
-		a.respondError(r.Context(), w, http.StatusBadRequest, "invalid_request", err.Error())
+		a.respondError(r.Context(), w, http.StatusBadRequest, "invalid_request", "invalid request body")
 		return
 	}
 
