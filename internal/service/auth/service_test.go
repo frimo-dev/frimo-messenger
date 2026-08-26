@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/json/v2"
+	"errors"
+	"strings"
 	"testing"
 	"time"
 	"uuid"
@@ -83,8 +85,8 @@ func TestService_Register_Success(t *testing.T) {
 		t.Fatalf("Register() unexpected error: %v", err)
 	}
 
-	if user.Email != createdUser.Email {
-		t.Errorf("expected email %q, got %q", createdUser.Email, user.Email)
+	if user != createdUser {
+		t.Errorf("expected user %+v, got %+v", createdUser, user)
 	}
 
 	if capturedInput.Email != "test@example.com" {
@@ -153,5 +155,276 @@ func TestService_Register_Success(t *testing.T) {
 
 	if payload.Recipient != "test@example.com" {
 		t.Errorf("expected recipient %q, got %q", "test@example.com", payload.Recipient)
+	}
+}
+
+func TestService_Register_InvalidEmail(t *testing.T) {
+	ctrl := gomock.NewController(t)
+
+	repository := mocks.NewMockRepository(ctrl)
+	passwordHasher := mocks.NewMockPasswordHasher(ctrl)
+	tokenGenerator := mocks.NewMockVerificationTokenGenerator(ctrl)
+	tokenCipher := mocks.NewMockVerificationTokenCipher(ctrl)
+
+	service := auth.NewService(
+		repository,
+		passwordHasher,
+		tokenGenerator,
+		tokenCipher,
+		time.Now,
+		30*time.Minute,
+	)
+
+	_, err := service.Register(context.Background(), auth.RegistrationInput{
+		Email:    "not-an-email",
+		Password: "very-secure-password",
+	})
+
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+
+	var validationErr *auth.ValidationError
+
+	if !errors.As(err, &validationErr) {
+		t.Fatalf("expected ValidationError, got %T: %v", err, err)
+	}
+
+	if validationErr.Code != "invalid_email" {
+		t.Errorf("expected code %q, got %q", "invalid_email", validationErr.Code)
+	}
+}
+
+func TestService_Register_PasswordTooShort(t *testing.T) {
+	ctrl := gomock.NewController(t)
+
+	repository := mocks.NewMockRepository(ctrl)
+	passwordHasher := mocks.NewMockPasswordHasher(ctrl)
+	tokenGenerator := mocks.NewMockVerificationTokenGenerator(ctrl)
+	tokenCipher := mocks.NewMockVerificationTokenCipher(ctrl)
+
+	service := auth.NewService(
+		repository,
+		passwordHasher,
+		tokenGenerator,
+		tokenCipher,
+		time.Now,
+		30*time.Minute,
+	)
+
+	_, err := service.Register(context.Background(), auth.RegistrationInput{
+		Email:    "correct@example.com",
+		Password: strings.Repeat("p", 11),
+	})
+
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+
+	var validationErr *auth.ValidationError
+
+	if !errors.As(err, &validationErr) {
+		t.Fatalf("expected ValidationError, got %T: %v", err, err)
+	}
+
+	if validationErr.Code != "password_too_short" {
+		t.Errorf("expected code %q, got %q", "password_too_short", validationErr.Code)
+	}
+}
+
+func TestService_Register_PasswordTooLong(t *testing.T) {
+	ctrl := gomock.NewController(t)
+
+	repository := mocks.NewMockRepository(ctrl)
+	passwordHasher := mocks.NewMockPasswordHasher(ctrl)
+	tokenGenerator := mocks.NewMockVerificationTokenGenerator(ctrl)
+	tokenCipher := mocks.NewMockVerificationTokenCipher(ctrl)
+
+	service := auth.NewService(
+		repository,
+		passwordHasher,
+		tokenGenerator,
+		tokenCipher,
+		time.Now,
+		30*time.Minute,
+	)
+
+	_, err := service.Register(context.Background(), auth.RegistrationInput{
+		Email:    "correct@example.com",
+		Password: strings.Repeat("p", 129),
+	})
+
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+
+	var validationErr *auth.ValidationError
+
+	if !errors.As(err, &validationErr) {
+		t.Fatalf("expected ValidationError, got %T: %v", err, err)
+	}
+
+	if validationErr.Code != "password_too_long" {
+		t.Errorf("expected code %q, got %q", "password_too_long", validationErr.Code)
+	}
+}
+
+func TestService_Register_PasswordHashError(t *testing.T) {
+	ctrl := gomock.NewController(t)
+
+	repository := mocks.NewMockRepository(ctrl)
+	passwordHasher := mocks.NewMockPasswordHasher(ctrl)
+	tokenGenerator := mocks.NewMockVerificationTokenGenerator(ctrl)
+	tokenCipher := mocks.NewMockVerificationTokenCipher(ctrl)
+
+	service := auth.NewService(
+		repository,
+		passwordHasher,
+		tokenGenerator,
+		tokenCipher,
+		time.Now,
+		30*time.Minute,
+	)
+
+	input := auth.RegistrationInput{
+		Email:    "correct@example.com",
+		Password: "correct-password",
+	}
+
+	hashErr := errors.New("hash failed")
+	passwordHasher.EXPECT().Hash(input.Password).Return("", hashErr)
+
+	createdUser, err := service.Register(context.Background(), input)
+
+	if !errors.Is(err, hashErr) {
+		t.Fatalf("expected hash error, got %v", err)
+	}
+
+	if createdUser != (auth.User{}) {
+		t.Errorf("expected empty user, got %v", createdUser)
+	}
+}
+
+func TestService_Register_TokenGenerationError(t *testing.T) {
+	ctrl := gomock.NewController(t)
+
+	repository := mocks.NewMockRepository(ctrl)
+	passwordHasher := mocks.NewMockPasswordHasher(ctrl)
+	tokenGenerator := mocks.NewMockVerificationTokenGenerator(ctrl)
+	tokenCipher := mocks.NewMockVerificationTokenCipher(ctrl)
+
+	service := auth.NewService(
+		repository,
+		passwordHasher,
+		tokenGenerator,
+		tokenCipher,
+		time.Now,
+		30*time.Minute,
+	)
+
+	input := auth.RegistrationInput{
+		Email:    "correct@example.com",
+		Password: "correct-password",
+	}
+
+	tokenGeneratorErr := errors.New("token generation failed")
+
+	passwordHasher.EXPECT().Hash(input.Password).Return("password-hash", nil)
+	tokenGenerator.EXPECT().Generate().Return("", []byte{}, tokenGeneratorErr)
+
+	createdUser, err := service.Register(context.Background(), input)
+
+	if !errors.Is(err, tokenGeneratorErr) {
+		t.Fatalf("expected token generator error, got %v", err)
+	}
+
+	if createdUser != (auth.User{}) {
+		t.Errorf("expected empty user, got %v", createdUser)
+	}
+}
+
+func TestService_Register_TokenEncryptionError(t *testing.T) {
+	ctrl := gomock.NewController(t)
+
+	repository := mocks.NewMockRepository(ctrl)
+	passwordHasher := mocks.NewMockPasswordHasher(ctrl)
+	tokenGenerator := mocks.NewMockVerificationTokenGenerator(ctrl)
+	tokenCipher := mocks.NewMockVerificationTokenCipher(ctrl)
+
+	service := auth.NewService(
+		repository,
+		passwordHasher,
+		tokenGenerator,
+		tokenCipher,
+		time.Now,
+		30*time.Minute,
+	)
+
+	input := auth.RegistrationInput{
+		Email:    "correct@example.com",
+		Password: "correct-password",
+	}
+
+	passwordHasher.EXPECT().Hash(input.Password).Return("password-hash", nil)
+
+	rawToken := "raw-verification-token"
+	tokenHash := []byte("verification-token-hash")
+	tokenGenerator.EXPECT().Generate().Return(rawToken, tokenHash, nil)
+
+	tokenEncryptionErr := errors.New("token encryption failed")
+	tokenCipher.EXPECT().Encrypt([]byte(rawToken), gomock.Any()).Return([]byte{}, tokenEncryptionErr)
+
+	createdUser, err := service.Register(context.Background(), input)
+
+	if !errors.Is(err, tokenEncryptionErr) {
+		t.Fatalf("expected token encryption error, got %v", err)
+	}
+
+	if createdUser != (auth.User{}) {
+		t.Errorf("expected empty user, got %v", createdUser)
+	}
+}
+
+func TestService_Register_RepositoryError(t *testing.T) {
+	ctrl := gomock.NewController(t)
+
+	repository := mocks.NewMockRepository(ctrl)
+	passwordHasher := mocks.NewMockPasswordHasher(ctrl)
+	tokenGenerator := mocks.NewMockVerificationTokenGenerator(ctrl)
+	tokenCipher := mocks.NewMockVerificationTokenCipher(ctrl)
+
+	service := auth.NewService(
+		repository,
+		passwordHasher,
+		tokenGenerator,
+		tokenCipher,
+		time.Now,
+		30*time.Minute,
+	)
+
+	input := auth.RegistrationInput{
+		Email:    "correct@example.com",
+		Password: "correct-password",
+	}
+
+	passwordHasher.EXPECT().Hash(input.Password).Return("password-hash", nil)
+
+	rawToken := "raw-verification-token"
+	tokenHash := []byte("verification-token-hash")
+	tokenGenerator.EXPECT().Generate().Return(rawToken, tokenHash, nil)
+
+	tokenCipher.EXPECT().Encrypt([]byte(rawToken), gomock.Any()).Return([]byte("encrypted-token"), nil)
+
+	repositoryErr := errors.New("repository failed")
+	repository.EXPECT().CreateUser(gomock.Any(), gomock.Any()).Return(auth.User{}, repositoryErr)
+
+	createdUser, err := service.Register(context.Background(), input)
+
+	if !errors.Is(err, repositoryErr) {
+		t.Fatalf("expected repository error, got %v", err)
+	}
+
+	if createdUser != (auth.User{}) {
+		t.Errorf("expected empty user, got %v", createdUser)
 	}
 }
