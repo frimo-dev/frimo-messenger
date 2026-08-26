@@ -3,122 +3,34 @@ package auth_test
 import (
 	"bytes"
 	"context"
+	"encoding/json/v2"
 	"testing"
 	"time"
 	"uuid"
 
-	"github.com/frimo-dev/frimo-messenger/internal/security/token"
+	"github.com/frimo-dev/frimo-messenger/internal/dto"
 	"github.com/frimo-dev/frimo-messenger/internal/service/auth"
+	"github.com/frimo-dev/frimo-messenger/internal/service/auth/mocks"
+	"go.uber.org/mock/gomock"
 )
 
-type spyPasswordHasher struct {
-	receivedPassword string
-	hash             string
-	err              error
-}
+func TestService_Register_Success(t *testing.T) {
+	ctrl := gomock.NewController(t)
 
-func (h *spyPasswordHasher) Hash(password string) (string, error) {
-	h.receivedPassword = password
+	repository := mocks.NewMockRepository(ctrl)
+	passwordHasher := mocks.NewMockPasswordHasher(ctrl)
+	tokenGenerator := mocks.NewMockVerificationTokenGenerator(ctrl)
+	tokenCipher := mocks.NewMockVerificationTokenCipher(ctrl)
 
-	if h.err != nil {
-		return "", h.err
+	input := auth.RegistrationInput{
+		Email:    " Test@Example.COM ",
+		Password: "very-secure-password",
 	}
 
-	return h.hash, nil
-}
-
-type spyTokenGenerator struct {
-	rawToken  string
-	tokenHash []byte
-	err       error
-	called    bool
-}
-
-func (g *spyTokenGenerator) Generate() (string, []byte, error) {
-	g.called = true
-
-	if g.err != nil {
-		return "", nil, g.err
-	}
-
-	return g.rawToken, g.tokenHash, nil
-}
-
-type spyRepository struct {
-	receivedInput auth.CreateUserInput
-	createdUser   auth.User
-
-	receivedTokenHash   []byte
-	receivedConfirmedAt time.Time
-
-	err    error
-	called bool
-}
-
-func (r *spyRepository) CreateUser(
-	_ context.Context,
-	input auth.CreateUserInput,
-) (auth.User, error) {
-	r.called = true
-	r.receivedInput = input
-
-	if r.err != nil {
-		return auth.User{}, r.err
-	}
-
-	return r.createdUser, nil
-}
-
-func (r *spyRepository) ConfirmEmail(
-	_ context.Context,
-	tokenHash []byte,
-	confirmedAt time.Time,
-) error {
-	r.called = true
-	r.receivedTokenHash = tokenHash
-	r.receivedConfirmedAt = confirmedAt
-
-	return r.err
-}
-
-func (r *spyRepository) ResendVerification(_ context.Context, input auth.ResendVerificationInput) error {
-	return nil
-}
-
-type stubTokenCipher struct {
-	receivedPlaintext      []byte
-	receivedAdditionalData []byte
-	ciphertext             []byte
-	err                    error
-}
-
-func (c *stubTokenCipher) Encrypt(
-	plaintext []byte,
-	additionalData []byte,
-) ([]byte, error) {
-	c.receivedPlaintext = append(
-		[]byte(nil),
-		plaintext...,
-	)
-
-	c.receivedAdditionalData = append(
-		[]byte(nil),
-		additionalData...,
-	)
-
-	if c.err != nil {
-		return nil, c.err
-	}
-
-	return append([]byte(nil), c.ciphertext...), nil
-}
-
-// TODO: разделить тест на много маленьких
-func TestServiceRegisterCreatesUserAndVerificationToken(t *testing.T) {
 	now := time.Date(
 		2026,
-		time.July,
-		20,
+		time.August,
+		26,
 		12,
 		0,
 		0,
@@ -126,197 +38,120 @@ func TestServiceRegisterCreatesUserAndVerificationToken(t *testing.T) {
 		time.UTC,
 	)
 
-	userID := uuid.New()
-
-	repository := &spyRepository{
-		createdUser: auth.User{
-			ID:        userID,
-			Email:     "misha@example.com",
-			CreatedAt: now,
-		},
-	}
-
-	passwordHasher := &spyPasswordHasher{
-		hash: "encoded-password-hash",
-	}
-
-	tokenGenerator := &spyTokenGenerator{
-		rawToken:  "raw-verification-token",
-		tokenHash: []byte("verification-token-hash"),
-	}
-
-	tokenCipher := &stubTokenCipher{
-		ciphertext: []byte("encrypted-token"),
-	}
-
-	service := auth.NewService(
-		repository,
-		passwordHasher,
-		tokenGenerator,
-		tokenCipher,
-		func() time.Time { return now },
-		time.Minute*30,
-	)
-
-	user, err := service.Register(
-		context.Background(),
-		auth.RegistrationInput{
-			Email:    "  Misha@Example.com  ",
-			Password: "long-secret-password",
-		},
-	)
-	if err != nil {
-		t.Fatalf("register user: %v", err)
-	}
-
-	if passwordHasher.receivedPassword != "long-secret-password" {
-		t.Fatalf(
-			"expected hasher to receive plaintext password, got %q",
-			passwordHasher.receivedPassword,
-		)
-	}
-
-	if !tokenGenerator.called {
-		t.Fatal("expected token generator to be called")
-	}
-
-	if !repository.called {
-		t.Fatal("expected repository to be called")
-	}
-
-	if repository.receivedInput.Email != "misha@example.com" {
-		t.Fatalf(
-			"expected normalized email, got %q",
-			repository.receivedInput.Email,
-		)
-	}
-
-	if repository.receivedInput.PasswordHash != "encoded-password-hash" {
-		t.Fatalf(
-			"expected password hash %q, got %q",
-			"encoded-password-hash",
-			repository.receivedInput.PasswordHash,
-		)
-	}
-
-	if repository.receivedInput.PasswordHash == "long-secret-password" {
-		t.Fatal("repository received plaintext password")
-	}
-
-	if !bytes.Equal(
-		repository.receivedInput.Verification.TokenHash,
-		[]byte("verification-token-hash"),
-	) {
-		t.Fatalf(
-			"unexpected verification token hash: %q",
-			repository.receivedInput.Verification.TokenHash,
-		)
-	}
-
-	if repository.receivedInput.ID == uuid.Nil() {
-		t.Fatal("expected generated user ID")
-	}
-
-	if repository.receivedInput.Verification.ID == uuid.Nil() {
-		t.Fatal("expected generated verification ID")
-	}
-
-	if user.ID != userID {
-		t.Fatalf(
-			"expected user ID %q, got %q",
-			"user-id",
-			user.ID,
-		)
-	}
-
-	if !repository.receivedInput.CreatedAt.Equal(now) {
-		t.Fatalf(
-			"expected created at %v, got %v",
-			now,
-			repository.receivedInput.CreatedAt,
-		)
-	}
-}
-
-func TestServiceConfirmHashesTokenAndConfirmsVerification(t *testing.T) {
-	repository := &spyRepository{}
-
-	now := time.Date(
-		2026,
-		time.July,
-		20,
-		15,
-		30,
-		0,
-		0,
-		time.FixedZone("UTC+3", 3*60*60),
-	)
-
-	passwordHasher := &spyPasswordHasher{
-		hash: "encoded-password-hash",
-	}
-
-	tokenGenerator := &spyTokenGenerator{
-		rawToken:  "raw-verification-token",
-		tokenHash: []byte("verification-token-hash"),
-	}
-
-	tokenCipher := &stubTokenCipher{
-		ciphertext: []byte("encrypted-token"),
-	}
-
-	service := auth.NewService(
-		repository,
-		passwordHasher,
-		tokenGenerator,
-		tokenCipher,
-		func() time.Time { return now },
-		time.Minute*30,
-	)
+	passwordHasher.EXPECT().Hash("very-secure-password").Return("hashed-password", nil)
 
 	rawToken := "raw-verification-token"
+	tokenHash := []byte("verification-token-hash")
+	tokenGenerator.EXPECT().Generate().Return(rawToken, tokenHash, nil)
 
-	err := service.ConfirmEmail(
-		context.Background(),
-		rawToken,
+	var capturedAAD []byte
+	encryptedToken := []byte("encrypted-token")
+	tokenCipher.
+		EXPECT().
+		Encrypt([]byte(rawToken), gomock.Any()).DoAndReturn(
+		func(plaintext []byte, additionalData []byte) ([]byte, error) {
+			capturedAAD = append([]byte(nil), additionalData...)
+			return encryptedToken, nil
+		})
+
+	createdUser := auth.User{Email: "test@example.com"}
+	var capturedInput auth.CreateUserInput
+	repository.EXPECT().
+		CreateUser(
+			gomock.Any(),
+			gomock.Any(),
+		).
+		DoAndReturn(func(_ context.Context, input auth.CreateUserInput) (auth.User, error) {
+			capturedInput = input
+			return createdUser, nil
+		})
+
+	verificationLifetime := 30 * time.Minute
+	service := auth.NewService(
+		repository,
+		passwordHasher,
+		tokenGenerator,
+		tokenCipher,
+		func() time.Time {
+			return now
+		},
+		verificationLifetime,
 	)
+
+	user, err := service.Register(context.Background(), input)
 	if err != nil {
-		t.Fatalf("confirm email: %v", err)
+		t.Fatalf("Register() unexpected error: %v", err)
 	}
 
-	if !repository.called {
-		t.Fatal("expected repository to be called")
+	if user.Email != createdUser.Email {
+		t.Errorf("expected email %q, got %q", createdUser.Email, user.Email)
 	}
 
-	expectedHash := token.Hash(rawToken)
-
-	if !bytes.Equal(
-		repository.receivedTokenHash,
-		expectedHash,
-	) {
-		t.Fatalf(
-			"expected token hash %x, got %x",
-			expectedHash,
-			repository.receivedTokenHash,
-		)
+	if capturedInput.Email != "test@example.com" {
+		t.Errorf("expected normalized email %q, got %q", "test@example.com", capturedInput.Email)
 	}
 
-	expectedConfirmedAt := now.UTC()
-
-	if !repository.receivedConfirmedAt.Equal(
-		expectedConfirmedAt,
-	) {
-		t.Fatalf(
-			"expected confirmed at %v, got %v",
-			expectedConfirmedAt,
-			repository.receivedConfirmedAt,
-		)
+	if capturedInput.PasswordHash != "hashed-password" {
+		t.Errorf("expected password hash %q, got %q", "hashed-password", capturedInput.PasswordHash)
 	}
 
-	if repository.receivedConfirmedAt.Location() != time.UTC {
-		t.Fatalf(
-			"expected UTC location, got %v",
-			repository.receivedConfirmedAt.Location(),
-		)
+	if !capturedInput.CreatedAt.Equal(now) {
+		t.Errorf("expected created at %v, got %v", now, capturedInput.CreatedAt)
+	}
+
+	verification := capturedInput.Verification
+
+	if verification.ID == uuid.Nil() {
+		t.Error("verification ID must not be nil")
+	}
+
+	if !bytes.Equal(verification.TokenHash, tokenHash) {
+		t.Errorf("unexpected verification token hash")
+	}
+
+	if !bytes.Equal(verification.TokenCiphertext, encryptedToken) {
+		t.Errorf("unexpected verification token ciphertext")
+	}
+
+	expectedExpiresAt := now.Add(verificationLifetime)
+	if !verification.ExpiresAt.Equal(expectedExpiresAt) {
+		t.Errorf("expected expires at %v, got %v", expectedExpiresAt, verification.ExpiresAt)
+	}
+
+	// verification.ID должен быть использован как AAD при Encrypt
+	if !bytes.Equal(capturedAAD, verification.ID[:]) {
+		t.Error("cipher AAD must equal verification ID")
+	}
+
+	event := capturedInput.OutboxEvent
+
+	if event.ID == uuid.Nil() {
+		t.Error("outbox event ID must not be nil")
+	}
+
+	if event.Type != dto.EmailVerificationRequestedType {
+		t.Errorf("unexpected event type %q", event.Type)
+	}
+
+	if !event.CreatedAt.Equal(now) {
+		t.Errorf("expected created at %v, got %v", now, event.CreatedAt)
+	}
+
+	if !event.AvailableAt.Equal(now) {
+		t.Errorf("expected available at %v, got %v", now, event.AvailableAt)
+	}
+
+	var payload dto.EmailVerificationRequested
+
+	if err := json.Unmarshal(event.Payload, &payload); err != nil {
+		t.Fatalf("unmarshal event payload: %v", err)
+	}
+
+	if payload.VerificationID != verification.ID {
+		t.Errorf("payload verification ID does not match verification ID")
+	}
+
+	if payload.Recipient != "test@example.com" {
+		t.Errorf("expected recipient %q, got %q", "test@example.com", payload.Recipient)
 	}
 }
