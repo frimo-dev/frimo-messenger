@@ -53,6 +53,14 @@ func (a *API) verifyEmail(w http.ResponseWriter, r *http.Request) {
 				"verification_token_used",
 				"verification token has already been used",
 			)
+		case errors.Is(err, auth.ErrRevokedToken):
+			a.respondError(
+				r.Context(),
+				w,
+				http.StatusBadRequest,
+				"verification_token_revoked",
+				"verification token has revoked",
+			)
 		default:
 			a.logger.Error(
 				"failed to verify email",

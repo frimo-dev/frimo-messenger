@@ -1,21 +1,28 @@
 package httpapi
 
 import (
+	"context"
 	"net/http"
 
 	"github.com/frimo-dev/frimo-messenger/internal/service/auth"
 	"go.uber.org/zap"
 )
 
+type AuthService interface {
+	Register(ctx context.Context, input auth.RegistrationInput) (auth.User, error)
+	ConfirmEmail(ctx context.Context, rawToken string) error
+	ResendVerification(ctx context.Context, email string) error
+}
+
 type API struct {
 	mux *http.ServeMux
 
-	authService *auth.Service
+	authService AuthService
 
 	logger *zap.Logger
 }
 
-func New(logger *zap.Logger, authService *auth.Service) *API {
+func New(logger *zap.Logger, authService AuthService) *API {
 	api := &API{
 		mux:         http.NewServeMux(),
 		authService: authService,
