@@ -251,8 +251,8 @@ func (r *AuthRepository) ResendVerification(ctx context.Context, input auth.Rese
 		SELECT COUNT(*)
 		FROM email_verifications
 		WHERE user_id = $1
-			AND created_at >= $2 - INTERVAL '1 hour'
-			AND created_at <= $2;
+			AND created_at >= $2::timestamptz - INTERVAL '1 hour'
+			AND created_at <= $2::timestamptz;
 	`
 
 	var count int
