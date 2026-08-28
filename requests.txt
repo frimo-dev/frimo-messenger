@@ -1,5 +1,5 @@
 curl -i \
-  -X POST http://localhost:8080/auth/register \
+  -X POST http://localhost/auth/register \
   -H 'Content-Type: application/json' \
   -d '{
     "email": "test@example.com",
@@ -7,10 +7,10 @@ curl -i \
   }'
 
 curl -i \
-  -X POST http://localhost:8080/auth/resend \
+  -X POST http://localhost/auth/resend \
   -H 'Content-Type: application/json' \
   -d '{
     "email": "test@example.com"
   }'
 
-curl -i "http://localhost:8080/auth/verify-email?token=${TOKEN}"
+curl -i "http://localhost/auth/verify-email?token=${TOKEN}"

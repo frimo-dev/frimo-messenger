@@ -58,7 +58,7 @@ func Load() (Config, error) {
 			URL: os.Getenv("DATABASE_URL"),
 		},
 		App: AppConfig{
-			BaseURL: getEnv("APP_BASE_URL", "http://localhost:8080"),
+			BaseURL: getEnv("APP_BASE_URL", "http://localhost"),
 		},
 		Verification: VerificationConfig{
 			EncryptionKey: os.Getenv(
