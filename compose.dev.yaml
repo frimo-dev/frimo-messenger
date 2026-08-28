@@ -1,0 +1,9 @@
+services:
+  nginx:
+    depends_on: !reset []
+
+    volumes:
+      - ./deploy/nginx/nginx.dev.conf:/etc/nginx/nginx.conf:ro
+
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
