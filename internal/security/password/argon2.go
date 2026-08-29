@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/frimo-dev/frimo-messenger/internal/service/auth"
 	"golang.org/x/crypto/argon2"
 )
 
@@ -25,13 +26,13 @@ type parameters struct {
 	parallelism uint8
 }
 
-type Argon2Hasher struct{}
+type Argon2Manager struct{}
 
-func NewArgon2Hasher() *Argon2Hasher {
-	return &Argon2Hasher{}
+func NewArgon2Hasher() *Argon2Manager {
+	return &Argon2Manager{}
 }
 
-func (h *Argon2Hasher) Hash(password string) (string, error) {
+func (h *Argon2Manager) Hash(password string) (string, error) {
 	salt := make([]byte, saltLength)
 
 	if _, err := rand.Read(salt); err != nil {
@@ -62,22 +63,26 @@ func (h *Argon2Hasher) Hash(password string) (string, error) {
 	return encoded, nil
 }
 
-func (h *Argon2Hasher) Compare(password string, encodedHash string) (bool, error) {
-	parameters, salt, expectedHash, err := decodeHash(encodedHash)
+func (h *Argon2Manager) Verify(encodedHash, password string) error {
+	params, salt, expectedHash, err := decodeHash(encodedHash)
 	if err != nil {
-		return false, err
+		return fmt.Errorf("decode password hash: %w", err)
 	}
 
 	actualHash := argon2.IDKey(
 		[]byte(password),
 		salt,
-		parameters.iterations,
-		parameters.memory,
-		parameters.parallelism,
+		params.iterations,
+		params.memory,
+		params.parallelism,
 		uint32(len(expectedHash)),
 	)
 
-	return subtle.ConstantTimeCompare(actualHash, expectedHash) == 1, nil
+	if subtle.ConstantTimeCompare(actualHash, expectedHash) != 1 {
+		return auth.ErrInvalidCredentials
+	}
+
+	return nil
 }
 
 func decodeHash(encodedHash string) (parameters, []byte, []byte, error) {
