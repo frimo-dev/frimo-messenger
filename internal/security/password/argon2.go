@@ -28,7 +28,7 @@ type parameters struct {
 
 type Argon2Manager struct{}
 
-func NewArgon2Hasher() *Argon2Manager {
+func NewArgon2Manager() *Argon2Manager {
 	return &Argon2Manager{}
 }
 

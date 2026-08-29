@@ -9,7 +9,7 @@ import (
 )
 
 func TestArgon2Manager_HashAndVerify(t *testing.T) {
-	hasher := NewArgon2Hasher()
+	hasher := NewArgon2Manager()
 
 	const password = "long-secret-password"
 
@@ -28,7 +28,7 @@ func TestArgon2Manager_HashAndVerify(t *testing.T) {
 }
 
 func TestArgon2Manager_Verify_InvalidPassword(t *testing.T) {
-	hasher := NewArgon2Hasher()
+	hasher := NewArgon2Manager()
 
 	hash, err := hasher.Hash("correct-password")
 	if err != nil {
@@ -46,7 +46,7 @@ func TestArgon2Manager_Verify_InvalidPassword(t *testing.T) {
 }
 
 func TestArgon2Manager_UsesRandomSalt(t *testing.T) {
-	hasher := NewArgon2Hasher()
+	hasher := NewArgon2Manager()
 
 	const password = "long-secret-password"
 
@@ -66,7 +66,7 @@ func TestArgon2Manager_UsesRandomSalt(t *testing.T) {
 }
 
 func TestArgon2Manager_HashFormat(t *testing.T) {
-	hasher := NewArgon2Hasher()
+	hasher := NewArgon2Manager()
 
 	hash, err := hasher.Hash("password")
 	if err != nil {
@@ -187,7 +187,7 @@ func TestDecodeHash_Valid(t *testing.T) {
 }
 
 func TestArgon2Manager_Verify_InvalidHash(t *testing.T) {
-	hasher := NewArgon2Hasher()
+	hasher := NewArgon2Manager()
 
 	err := hasher.Verify("not-an-argon2-hash", "password")
 	if err == nil {
