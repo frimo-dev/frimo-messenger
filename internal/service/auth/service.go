@@ -33,6 +33,17 @@ type VerificationTokenCipher interface {
 	Encrypt(plaintext []byte, additionalData []byte) ([]byte, error)
 }
 
+type User struct {
+	ID        uuid.UUID
+	Email     string
+	CreatedAt time.Time
+}
+
+type RegistrationInput struct {
+	Email    string
+	Password string
+}
+
 type Service struct {
 	repository                Repository
 	accessTokenIssuer         AccessTokenIssuer
