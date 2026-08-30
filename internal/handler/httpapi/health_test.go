@@ -16,8 +16,10 @@ func TestAPI_Health_Success(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
 	authService := mocks.NewMockAuthService(ctrl)
+	userService := mocks.NewMockUserService(ctrl)
+	accessTokenVerifier := mocks.NewMockAccessTokenVerifier(ctrl)
 
-	api := httpapi.New(zap.NewNop(), authService)
+	api := httpapi.New(zap.NewNop(), accessTokenVerifier, authService, userService)
 
 	req := httptest.NewRequest(
 		http.MethodGet,
@@ -50,8 +52,10 @@ func TestAPI_Health_MethodNotAllowed(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
 	authService := mocks.NewMockAuthService(ctrl)
+	userService := mocks.NewMockUserService(ctrl)
+	accessTokenVerifier := mocks.NewMockAccessTokenVerifier(ctrl)
 
-	api := httpapi.New(zap.NewNop(), authService)
+	api := httpapi.New(zap.NewNop(), accessTokenVerifier, authService, userService)
 
 	req := httptest.NewRequest(
 		http.MethodPost,

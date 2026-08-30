@@ -20,6 +20,8 @@ func TestAPI_Register_Success(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
 	authService := mocks.NewMockAuthService(ctrl)
+	userService := mocks.NewMockUserService(ctrl)
+	accessTokenVerifier := mocks.NewMockAccessTokenVerifier(ctrl)
 
 	userID := uuid.New()
 
@@ -36,7 +38,7 @@ func TestAPI_Register_Success(t *testing.T) {
 		nil,
 	)
 
-	api := httpapi.New(zap.NewNop(), authService)
+	api := httpapi.New(zap.NewNop(), accessTokenVerifier, authService, userService)
 
 	req := httptest.NewRequest(
 		http.MethodPost,
@@ -77,8 +79,10 @@ func TestAPI_Register_InvalidJSON(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
 	authService := mocks.NewMockAuthService(ctrl)
+	userService := mocks.NewMockUserService(ctrl)
+	accessTokenVerifier := mocks.NewMockAccessTokenVerifier(ctrl)
 
-	api := httpapi.New(zap.NewNop(), authService)
+	api := httpapi.New(zap.NewNop(), accessTokenVerifier, authService, userService)
 	req := httptest.NewRequest(http.MethodPost, "/auth/register", strings.NewReader(`{"email":`))
 	rec := httptest.NewRecorder()
 
@@ -93,6 +97,8 @@ func TestAPI_Register_ValidationError(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
 	authService := mocks.NewMockAuthService(ctrl)
+	userService := mocks.NewMockUserService(ctrl)
+	accessTokenVerifier := mocks.NewMockAccessTokenVerifier(ctrl)
 
 	validationErr := &auth.ValidationError{
 		Code:    "invalid_email",
@@ -108,7 +114,7 @@ func TestAPI_Register_ValidationError(t *testing.T) {
 		},
 	).Return(auth.User{}, validationErr)
 
-	api := httpapi.New(zap.NewNop(), authService)
+	api := httpapi.New(zap.NewNop(), accessTokenVerifier, authService, userService)
 
 	req := httptest.NewRequest(
 		http.MethodPost,
@@ -132,6 +138,8 @@ func TestAPI_Register_EmailAlreadyExists(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
 	authService := mocks.NewMockAuthService(ctrl)
+	userService := mocks.NewMockUserService(ctrl)
+	accessTokenVerifier := mocks.NewMockAccessTokenVerifier(ctrl)
 
 	authService.EXPECT().Register(
 		gomock.Any(),
@@ -141,7 +149,7 @@ func TestAPI_Register_EmailAlreadyExists(t *testing.T) {
 		},
 	).Return(auth.User{}, auth.ErrEmailAlreadyExists)
 
-	api := httpapi.New(zap.NewNop(), authService)
+	api := httpapi.New(zap.NewNop(), accessTokenVerifier, authService, userService)
 
 	req := httptest.NewRequest(
 		http.MethodPost,
@@ -165,12 +173,14 @@ func TestAPI_Register_InternalError(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
 	authService := mocks.NewMockAuthService(ctrl)
+	userService := mocks.NewMockUserService(ctrl)
+	accessTokenVerifier := mocks.NewMockAccessTokenVerifier(ctrl)
 
 	serviceErr := errors.New("database unavailable")
 
 	authService.EXPECT().Register(gomock.Any(), gomock.Any()).Return(auth.User{}, serviceErr)
 
-	api := httpapi.New(zap.NewNop(), authService)
+	api := httpapi.New(zap.NewNop(), accessTokenVerifier, authService, userService)
 
 	req := httptest.NewRequest(
 		http.MethodPost,
@@ -194,8 +204,10 @@ func TestAPI_Register_MethodNotAllowed(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
 	authService := mocks.NewMockAuthService(ctrl)
+	userService := mocks.NewMockUserService(ctrl)
+	accessTokenVerifier := mocks.NewMockAccessTokenVerifier(ctrl)
 
-	api := httpapi.New(zap.NewNop(), authService)
+	api := httpapi.New(zap.NewNop(), accessTokenVerifier, authService, userService)
 
 	req := httptest.NewRequest(
 		http.MethodGet,
@@ -216,8 +228,10 @@ func TestAPI_Register_UnknownField(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
 	authService := mocks.NewMockAuthService(ctrl)
+	userService := mocks.NewMockUserService(ctrl)
+	accessTokenVerifier := mocks.NewMockAccessTokenVerifier(ctrl)
 
-	api := httpapi.New(zap.NewNop(), authService)
+	api := httpapi.New(zap.NewNop(), accessTokenVerifier, authService, userService)
 
 	req := httptest.NewRequest(
 		http.MethodPost,
@@ -242,8 +256,10 @@ func TestAPI_Register_MultipleJSONObjects(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
 	authService := mocks.NewMockAuthService(ctrl)
+	userService := mocks.NewMockUserService(ctrl)
+	accessTokenVerifier := mocks.NewMockAccessTokenVerifier(ctrl)
 
-	api := httpapi.New(zap.NewNop(), authService)
+	api := httpapi.New(zap.NewNop(), accessTokenVerifier, authService, userService)
 
 	req := httptest.NewRequest(
 		http.MethodPost,
@@ -273,8 +289,10 @@ func TestAPI_Register_EmptyBody(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
 	authService := mocks.NewMockAuthService(ctrl)
+	userService := mocks.NewMockUserService(ctrl)
+	accessTokenVerifier := mocks.NewMockAccessTokenVerifier(ctrl)
 
-	api := httpapi.New(zap.NewNop(), authService)
+	api := httpapi.New(zap.NewNop(), accessTokenVerifier, authService, userService)
 
 	req := httptest.NewRequest(
 		http.MethodPost,
@@ -295,8 +313,10 @@ func TestAPI_Register_BodyTooLarge(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
 	authService := mocks.NewMockAuthService(ctrl)
+	userService := mocks.NewMockUserService(ctrl)
+	accessTokenVerifier := mocks.NewMockAccessTokenVerifier(ctrl)
 
-	api := httpapi.New(zap.NewNop(), authService)
+	api := httpapi.New(zap.NewNop(), accessTokenVerifier, authService, userService)
 
 	largePassword := strings.Repeat("a", 20*1024)
 
@@ -324,8 +344,10 @@ func TestAPI_Register_InvalidFieldType(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
 	authService := mocks.NewMockAuthService(ctrl)
+	userService := mocks.NewMockUserService(ctrl)
+	accessTokenVerifier := mocks.NewMockAccessTokenVerifier(ctrl)
 
-	api := httpapi.New(zap.NewNop(), authService)
+	api := httpapi.New(zap.NewNop(), accessTokenVerifier, authService, userService)
 
 	req := httptest.NewRequest(
 		http.MethodPost,

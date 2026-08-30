@@ -18,10 +18,12 @@ func TestAPI_VerifyEmail_Success(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
 	authService := mocks.NewMockAuthService(ctrl)
+	userService := mocks.NewMockUserService(ctrl)
+	accessTokenVerifier := mocks.NewMockAccessTokenVerifier(ctrl)
 
 	authService.EXPECT().ConfirmEmail(gomock.Any(), "raw-verification-token").Return(nil)
 
-	api := httpapi.New(zap.NewNop(), authService)
+	api := httpapi.New(zap.NewNop(), accessTokenVerifier, authService, userService)
 
 	req := httptest.NewRequest(
 		http.MethodGet,
@@ -54,8 +56,10 @@ func TestAPI_VerifyEmail_MissingToken(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
 	authService := mocks.NewMockAuthService(ctrl)
+	userService := mocks.NewMockUserService(ctrl)
+	accessTokenVerifier := mocks.NewMockAccessTokenVerifier(ctrl)
 
-	api := httpapi.New(zap.NewNop(), authService)
+	api := httpapi.New(zap.NewNop(), accessTokenVerifier, authService, userService)
 
 	req := httptest.NewRequest(
 		http.MethodGet,
@@ -76,10 +80,12 @@ func TestAPI_VerifyEmail_InvalidToken(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
 	authService := mocks.NewMockAuthService(ctrl)
+	userService := mocks.NewMockUserService(ctrl)
+	accessTokenVerifier := mocks.NewMockAccessTokenVerifier(ctrl)
 
 	authService.EXPECT().ConfirmEmail(gomock.Any(), "invalid-token").Return(auth.ErrInvalidToken)
 
-	api := httpapi.New(zap.NewNop(), authService)
+	api := httpapi.New(zap.NewNop(), accessTokenVerifier, authService, userService)
 
 	req := httptest.NewRequest(
 		http.MethodGet,
@@ -100,10 +106,12 @@ func TestAPI_VerifyEmail_ExpiredToken(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
 	authService := mocks.NewMockAuthService(ctrl)
+	userService := mocks.NewMockUserService(ctrl)
+	accessTokenVerifier := mocks.NewMockAccessTokenVerifier(ctrl)
 
 	authService.EXPECT().ConfirmEmail(gomock.Any(), "expired-token").Return(auth.ErrExpiredToken)
 
-	api := httpapi.New(zap.NewNop(), authService)
+	api := httpapi.New(zap.NewNop(), accessTokenVerifier, authService, userService)
 
 	req := httptest.NewRequest(
 		http.MethodGet,
@@ -124,10 +132,12 @@ func TestAPI_VerifyEmail_UsedToken(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
 	authService := mocks.NewMockAuthService(ctrl)
+	userService := mocks.NewMockUserService(ctrl)
+	accessTokenVerifier := mocks.NewMockAccessTokenVerifier(ctrl)
 
 	authService.EXPECT().ConfirmEmail(gomock.Any(), "used-token").Return(auth.ErrUsedToken)
 
-	api := httpapi.New(zap.NewNop(), authService)
+	api := httpapi.New(zap.NewNop(), accessTokenVerifier, authService, userService)
 
 	req := httptest.NewRequest(
 		http.MethodGet,
@@ -148,12 +158,14 @@ func TestAPI_VerifyEmail_InternalError(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
 	authService := mocks.NewMockAuthService(ctrl)
+	userService := mocks.NewMockUserService(ctrl)
+	accessTokenVerifier := mocks.NewMockAccessTokenVerifier(ctrl)
 
 	serviceErr := errors.New("database unavailable")
 
 	authService.EXPECT().ConfirmEmail(gomock.Any(), "raw-verification-token").Return(serviceErr)
 
-	api := httpapi.New(zap.NewNop(), authService)
+	api := httpapi.New(zap.NewNop(), accessTokenVerifier, authService, userService)
 
 	req := httptest.NewRequest(
 		http.MethodGet,
@@ -174,8 +186,10 @@ func TestAPI_VerifyEmail_MethodNotAllowed(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
 	authService := mocks.NewMockAuthService(ctrl)
+	userService := mocks.NewMockUserService(ctrl)
+	accessTokenVerifier := mocks.NewMockAccessTokenVerifier(ctrl)
 
-	api := httpapi.New(zap.NewNop(), authService)
+	api := httpapi.New(zap.NewNop(), accessTokenVerifier, authService, userService)
 
 	req := httptest.NewRequest(
 		http.MethodPost,
@@ -196,10 +210,12 @@ func TestAPI_VerifyEmail_RevokedToken(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
 	authService := mocks.NewMockAuthService(ctrl)
+	userService := mocks.NewMockUserService(ctrl)
+	accessTokenVerifier := mocks.NewMockAccessTokenVerifier(ctrl)
 
 	authService.EXPECT().ConfirmEmail(gomock.Any(), "revoked-token").Return(auth.ErrRevokedToken)
 
-	api := httpapi.New(zap.NewNop(), authService)
+	api := httpapi.New(zap.NewNop(), accessTokenVerifier, authService, userService)
 
 	req := httptest.NewRequest(
 		http.MethodGet,

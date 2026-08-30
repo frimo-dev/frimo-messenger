@@ -19,6 +19,8 @@ func TestAPI_Login_Success(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
 	authService := mocks.NewMockAuthService(ctrl)
+	userService := mocks.NewMockUserService(ctrl)
+	accessTokenVerifier := mocks.NewMockAccessTokenVerifier(ctrl)
 
 	authService.
 		EXPECT().
@@ -29,7 +31,7 @@ func TestAPI_Login_Success(t *testing.T) {
 		).
 		Return("access-token", nil)
 
-	api := httpapi.New(zap.NewNop(), authService)
+	api := httpapi.New(zap.NewNop(), accessTokenVerifier, authService, userService)
 
 	req := httptest.NewRequest(
 		http.MethodPost,
@@ -215,12 +217,14 @@ func TestAPI_Login_Errors(t *testing.T) {
 			ctrl := gomock.NewController(t)
 
 			authService := mocks.NewMockAuthService(ctrl)
+			userService := mocks.NewMockUserService(ctrl)
+			accessTokenVerifier := mocks.NewMockAccessTokenVerifier(ctrl)
 
 			if tt.prepare != nil {
 				tt.prepare(authService)
 			}
 
-			api := httpapi.New(zap.NewNop(), authService)
+			api := httpapi.New(zap.NewNop(), accessTokenVerifier, authService, userService)
 
 			req := httptest.NewRequest(
 				http.MethodPost,
@@ -247,8 +251,10 @@ func TestAPI_Login_MethodNotAllowed(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
 	authService := mocks.NewMockAuthService(ctrl)
+	userService := mocks.NewMockUserService(ctrl)
+	accessTokenVerifier := mocks.NewMockAccessTokenVerifier(ctrl)
 
-	api := httpapi.New(zap.NewNop(), authService)
+	api := httpapi.New(zap.NewNop(), accessTokenVerifier, authService, userService)
 
 	req := httptest.NewRequest(
 		http.MethodGet,

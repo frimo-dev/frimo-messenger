@@ -18,10 +18,12 @@ func TestAPI_ResendVerification_Success(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
 	authService := mocks.NewMockAuthService(ctrl)
+	userService := mocks.NewMockUserService(ctrl)
+	accessTokenVerifier := mocks.NewMockAccessTokenVerifier(ctrl)
 
 	authService.EXPECT().ResendVerification(gomock.Any(), "test@example.com").Return(nil)
 
-	api := httpapi.New(zap.NewNop(), authService)
+	api := httpapi.New(zap.NewNop(), accessTokenVerifier, authService, userService)
 
 	req := httptest.NewRequest(
 		http.MethodPost,
@@ -44,8 +46,10 @@ func TestAPI_ResendVerification_InvalidJSON(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
 	authService := mocks.NewMockAuthService(ctrl)
+	userService := mocks.NewMockUserService(ctrl)
+	accessTokenVerifier := mocks.NewMockAccessTokenVerifier(ctrl)
 
-	api := httpapi.New(zap.NewNop(), authService)
+	api := httpapi.New(zap.NewNop(), accessTokenVerifier, authService, userService)
 
 	req := httptest.NewRequest(
 		http.MethodPost,
@@ -66,6 +70,8 @@ func TestAPI_ResendVerification_ValidationError(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
 	authService := mocks.NewMockAuthService(ctrl)
+	userService := mocks.NewMockUserService(ctrl)
+	accessTokenVerifier := mocks.NewMockAccessTokenVerifier(ctrl)
 
 	validationErr := &auth.ValidationError{
 		Code:    "invalid_email",
@@ -75,7 +81,7 @@ func TestAPI_ResendVerification_ValidationError(t *testing.T) {
 
 	authService.EXPECT().ResendVerification(gomock.Any(), "not-an-email").Return(validationErr)
 
-	api := httpapi.New(zap.NewNop(), authService)
+	api := httpapi.New(zap.NewNop(), accessTokenVerifier, authService, userService)
 
 	req := httptest.NewRequest(
 		http.MethodPost,
@@ -122,10 +128,12 @@ func TestAPI_ResendVerification_HiddenErrors(t *testing.T) {
 			ctrl := gomock.NewController(t)
 
 			authService := mocks.NewMockAuthService(ctrl)
+			userService := mocks.NewMockUserService(ctrl)
+			accessTokenVerifier := mocks.NewMockAccessTokenVerifier(ctrl)
 
 			authService.EXPECT().ResendVerification(gomock.Any(), "test@example.com").Return(tt.err)
 
-			api := httpapi.New(zap.NewNop(), authService)
+			api := httpapi.New(zap.NewNop(), accessTokenVerifier, authService, userService)
 
 			req := httptest.NewRequest(
 				http.MethodPost,
@@ -150,12 +158,14 @@ func TestAPI_ResendVerification_InternalError(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
 	authService := mocks.NewMockAuthService(ctrl)
+	userService := mocks.NewMockUserService(ctrl)
+	accessTokenVerifier := mocks.NewMockAccessTokenVerifier(ctrl)
 
 	serviceErr := errors.New("database unavailable")
 
 	authService.EXPECT().ResendVerification(gomock.Any(), "test@example.com").Return(serviceErr)
 
-	api := httpapi.New(zap.NewNop(), authService)
+	api := httpapi.New(zap.NewNop(), accessTokenVerifier, authService, userService)
 
 	req := httptest.NewRequest(
 		http.MethodPost,
@@ -178,8 +188,10 @@ func TestAPI_ResendVerification_MethodNotAllowed(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
 	authService := mocks.NewMockAuthService(ctrl)
+	userService := mocks.NewMockUserService(ctrl)
+	accessTokenVerifier := mocks.NewMockAccessTokenVerifier(ctrl)
 
-	api := httpapi.New(zap.NewNop(), authService)
+	api := httpapi.New(zap.NewNop(), accessTokenVerifier, authService, userService)
 
 	req := httptest.NewRequest(http.MethodGet, "/auth/resend", nil)
 
