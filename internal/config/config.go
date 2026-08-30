@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/base64"
 	"fmt"
 	"os"
 	"time"
@@ -10,7 +11,7 @@ type Config struct {
 	HTTP             HTTPConfig
 	Database         DatabaseConfig
 	App              AppConfig
-	Verification     VerificationConfig
+	Auth             AuthConfig
 	GracefulShutdown GracefulShutdownConfig
 
 	VerificationTokenLifetime time.Duration
@@ -24,8 +25,18 @@ type DatabaseConfig struct {
 	URL string
 }
 
+type AuthConfig struct {
+	Login        LoginConfig
+	Verification VerificationConfig
+}
+
+type LoginConfig struct {
+	AccessTokenSecret []byte
+	AccessTokenTTL    time.Duration
+}
+
 type VerificationConfig struct {
-	EncryptionKey string
+	EncryptionKey []byte
 }
 
 type HTTPConfig struct {
@@ -46,6 +57,16 @@ type GracefulShutdownConfig struct {
 }
 
 func Load() (Config, error) {
+	encryptionKey, err := base64.StdEncoding.DecodeString(os.Getenv("VERIFICATION_TOKEN_ENCRYPTION_KEY"))
+	if err != nil {
+		return Config{}, fmt.Errorf("failed to decode VERIFICATION_TOKEN_ENCRYPTION_KEY: %v", err)
+	}
+
+	accessTokenSecret, err := base64.StdEncoding.DecodeString(os.Getenv("ACCESS_TOKEN_SECRET"))
+	if err != nil {
+		return Config{}, fmt.Errorf("failed to decode ACCESS_TOKEN_SECRET: %v", err)
+	}
+
 	cfg := Config{
 		HTTP: HTTPConfig{
 			Address:           getEnv("HTTP_ADDR", ":8080"),
@@ -60,10 +81,14 @@ func Load() (Config, error) {
 		App: AppConfig{
 			BaseURL: getEnv("APP_BASE_URL", "http://localhost"),
 		},
-		Verification: VerificationConfig{
-			EncryptionKey: os.Getenv(
-				"VERIFICATION_TOKEN_ENCRYPTION_KEY",
-			),
+		Auth: AuthConfig{
+			Login: LoginConfig{
+				AccessTokenSecret: accessTokenSecret,
+				AccessTokenTTL:    15 * time.Minute,
+			},
+			Verification: VerificationConfig{
+				EncryptionKey: encryptionKey,
+			},
 		},
 		GracefulShutdown: GracefulShutdownConfig{
 			HTTPShutdownTimeout:   10 * time.Second,
@@ -84,10 +109,12 @@ func Load() (Config, error) {
 		return Config{}, fmt.Errorf("APP_BASE_URL must not be empty")
 	}
 
-	if cfg.Verification.EncryptionKey == "" {
-		return Config{}, fmt.Errorf(
-			"VERIFICATION_TOKEN_ENCRYPTION_KEY is required",
-		)
+	if len(cfg.Auth.Verification.EncryptionKey) != 32 {
+		return Config{}, fmt.Errorf("VERIFICATION_TOKEN_ENCRYPTION_KEY must decode to 32 bytes")
+	}
+
+	if len(cfg.Auth.Login.AccessTokenSecret) != 32 {
+		return Config{}, fmt.Errorf("ACCESS_TOKEN_SECRET must decode to 32 bytes")
 	}
 
 	return cfg, nil

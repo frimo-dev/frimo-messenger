@@ -21,7 +21,8 @@ func TestService_Register_Success(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
 	repository := mocks.NewMockRepository(ctrl)
-	passwordHasher := mocks.NewMockPasswordHasher(ctrl)
+	jwtIssuer := mocks.NewMockAccessTokenIssuer(ctrl)
+	passwordManager := mocks.NewMockPasswordManager(ctrl)
 	tokenGenerator := mocks.NewMockVerificationTokenGenerator(ctrl)
 	tokenCipher := mocks.NewMockVerificationTokenCipher(ctrl)
 
@@ -41,7 +42,7 @@ func TestService_Register_Success(t *testing.T) {
 		time.UTC,
 	)
 
-	passwordHasher.EXPECT().Hash("very-secure-password").Return("hashed-password", nil)
+	passwordManager.EXPECT().Hash("very-secure-password").Return("hashed-password", nil)
 
 	rawToken := "raw-verification-token"
 	tokenHash := []byte("verification-token-hash")
@@ -72,7 +73,8 @@ func TestService_Register_Success(t *testing.T) {
 	verificationLifetime := 30 * time.Minute
 	service := auth.NewService(
 		repository,
-		passwordHasher,
+		jwtIssuer,
+		passwordManager,
 		tokenGenerator,
 		tokenCipher,
 		func() time.Time {
@@ -96,6 +98,10 @@ func TestService_Register_Success(t *testing.T) {
 
 	if capturedInput.PasswordHash != "hashed-password" {
 		t.Errorf("expected password hash %q, got %q", "hashed-password", capturedInput.PasswordHash)
+	}
+
+	if capturedInput.ID == uuid.Nil() {
+		t.Error("user ID must not be nil")
 	}
 
 	if !capturedInput.CreatedAt.Equal(now) {
@@ -159,285 +165,257 @@ func TestService_Register_Success(t *testing.T) {
 	}
 }
 
-func TestService_Register_InvalidEmail(t *testing.T) {
-	ctrl := gomock.NewController(t)
-
-	repository := mocks.NewMockRepository(ctrl)
-	passwordHasher := mocks.NewMockPasswordHasher(ctrl)
-	tokenGenerator := mocks.NewMockVerificationTokenGenerator(ctrl)
-	tokenCipher := mocks.NewMockVerificationTokenCipher(ctrl)
-
-	service := auth.NewService(
-		repository,
-		passwordHasher,
-		tokenGenerator,
-		tokenCipher,
-		time.Now,
-		30*time.Minute,
-	)
-
-	_, err := service.Register(context.Background(), auth.RegistrationInput{
-		Email:    "not-an-email",
-		Password: "very-secure-password",
-	})
-
-	if err == nil {
-		t.Fatal("expected error, got nil")
-	}
-
-	var validationErr *auth.ValidationError
-
-	if !errors.As(err, &validationErr) {
-		t.Fatalf("expected ValidationError, got %T: %v", err, err)
-	}
-
-	if validationErr.Code != "invalid_email" {
-		t.Errorf("expected code %q, got %q", "invalid_email", validationErr.Code)
-	}
-}
-
-func TestService_Register_PasswordTooShort(t *testing.T) {
-	ctrl := gomock.NewController(t)
-
-	repository := mocks.NewMockRepository(ctrl)
-	passwordHasher := mocks.NewMockPasswordHasher(ctrl)
-	tokenGenerator := mocks.NewMockVerificationTokenGenerator(ctrl)
-	tokenCipher := mocks.NewMockVerificationTokenCipher(ctrl)
-
-	service := auth.NewService(
-		repository,
-		passwordHasher,
-		tokenGenerator,
-		tokenCipher,
-		time.Now,
-		30*time.Minute,
-	)
-
-	_, err := service.Register(context.Background(), auth.RegistrationInput{
-		Email:    "correct@example.com",
-		Password: strings.Repeat("p", 11),
-	})
-
-	if err == nil {
-		t.Fatal("expected error, got nil")
-	}
-
-	var validationErr *auth.ValidationError
-
-	if !errors.As(err, &validationErr) {
-		t.Fatalf("expected ValidationError, got %T: %v", err, err)
-	}
-
-	if validationErr.Code != "password_too_short" {
-		t.Errorf("expected code %q, got %q", "password_too_short", validationErr.Code)
-	}
-}
-
-func TestService_Register_PasswordTooLong(t *testing.T) {
-	ctrl := gomock.NewController(t)
-
-	repository := mocks.NewMockRepository(ctrl)
-	passwordHasher := mocks.NewMockPasswordHasher(ctrl)
-	tokenGenerator := mocks.NewMockVerificationTokenGenerator(ctrl)
-	tokenCipher := mocks.NewMockVerificationTokenCipher(ctrl)
-
-	service := auth.NewService(
-		repository,
-		passwordHasher,
-		tokenGenerator,
-		tokenCipher,
-		time.Now,
-		30*time.Minute,
-	)
-
-	_, err := service.Register(context.Background(), auth.RegistrationInput{
-		Email:    "correct@example.com",
-		Password: strings.Repeat("p", 129),
-	})
-
-	if err == nil {
-		t.Fatal("expected error, got nil")
-	}
-
-	var validationErr *auth.ValidationError
-
-	if !errors.As(err, &validationErr) {
-		t.Fatalf("expected ValidationError, got %T: %v", err, err)
-	}
-
-	if validationErr.Code != "password_too_long" {
-		t.Errorf("expected code %q, got %q", "password_too_long", validationErr.Code)
-	}
-}
-
-func TestService_Register_PasswordHashError(t *testing.T) {
-	ctrl := gomock.NewController(t)
-
-	repository := mocks.NewMockRepository(ctrl)
-	passwordHasher := mocks.NewMockPasswordHasher(ctrl)
-	tokenGenerator := mocks.NewMockVerificationTokenGenerator(ctrl)
-	tokenCipher := mocks.NewMockVerificationTokenCipher(ctrl)
-
-	service := auth.NewService(
-		repository,
-		passwordHasher,
-		tokenGenerator,
-		tokenCipher,
-		time.Now,
-		30*time.Minute,
-	)
-
-	input := auth.RegistrationInput{
-		Email:    "correct@example.com",
-		Password: "correct-password",
-	}
-
+func TestService_Register_Errors(t *testing.T) {
 	hashErr := errors.New("hash failed")
-	passwordHasher.EXPECT().Hash(input.Password).Return("", hashErr)
-
-	createdUser, err := service.Register(context.Background(), input)
-
-	if !errors.Is(err, hashErr) {
-		t.Fatalf("expected hash error, got %v", err)
-	}
-
-	if createdUser != (auth.User{}) {
-		t.Errorf("expected empty user, got %v", createdUser)
-	}
-}
-
-func TestService_Register_TokenGenerationError(t *testing.T) {
-	ctrl := gomock.NewController(t)
-
-	repository := mocks.NewMockRepository(ctrl)
-	passwordHasher := mocks.NewMockPasswordHasher(ctrl)
-	tokenGenerator := mocks.NewMockVerificationTokenGenerator(ctrl)
-	tokenCipher := mocks.NewMockVerificationTokenCipher(ctrl)
-
-	service := auth.NewService(
-		repository,
-		passwordHasher,
-		tokenGenerator,
-		tokenCipher,
-		time.Now,
-		30*time.Minute,
-	)
-
-	input := auth.RegistrationInput{
-		Email:    "correct@example.com",
-		Password: "correct-password",
-	}
-
-	tokenGeneratorErr := errors.New("token generation failed")
-
-	passwordHasher.EXPECT().Hash(input.Password).Return("password-hash", nil)
-	tokenGenerator.EXPECT().Generate().Return("", []byte{}, tokenGeneratorErr)
-
-	createdUser, err := service.Register(context.Background(), input)
-
-	if !errors.Is(err, tokenGeneratorErr) {
-		t.Fatalf("expected token generator error, got %v", err)
-	}
-
-	if createdUser != (auth.User{}) {
-		t.Errorf("expected empty user, got %v", createdUser)
-	}
-}
-
-func TestService_Register_TokenEncryptionError(t *testing.T) {
-	ctrl := gomock.NewController(t)
-
-	repository := mocks.NewMockRepository(ctrl)
-	passwordHasher := mocks.NewMockPasswordHasher(ctrl)
-	tokenGenerator := mocks.NewMockVerificationTokenGenerator(ctrl)
-	tokenCipher := mocks.NewMockVerificationTokenCipher(ctrl)
-
-	service := auth.NewService(
-		repository,
-		passwordHasher,
-		tokenGenerator,
-		tokenCipher,
-		time.Now,
-		30*time.Minute,
-	)
-
-	input := auth.RegistrationInput{
-		Email:    "correct@example.com",
-		Password: "correct-password",
-	}
-
-	passwordHasher.EXPECT().Hash(input.Password).Return("password-hash", nil)
-
-	rawToken := "raw-verification-token"
-	tokenHash := []byte("verification-token-hash")
-	tokenGenerator.EXPECT().Generate().Return(rawToken, tokenHash, nil)
-
+	tokenGenerationErr := errors.New("token generation failed")
 	tokenEncryptionErr := errors.New("token encryption failed")
-	tokenCipher.EXPECT().Encrypt([]byte(rawToken), gomock.Any()).Return([]byte{}, tokenEncryptionErr)
-
-	createdUser, err := service.Register(context.Background(), input)
-
-	if !errors.Is(err, tokenEncryptionErr) {
-		t.Fatalf("expected token encryption error, got %v", err)
-	}
-
-	if createdUser != (auth.User{}) {
-		t.Errorf("expected empty user, got %v", createdUser)
-	}
-}
-
-func TestService_Register_RepositoryError(t *testing.T) {
-	ctrl := gomock.NewController(t)
-
-	repository := mocks.NewMockRepository(ctrl)
-	passwordHasher := mocks.NewMockPasswordHasher(ctrl)
-	tokenGenerator := mocks.NewMockVerificationTokenGenerator(ctrl)
-	tokenCipher := mocks.NewMockVerificationTokenCipher(ctrl)
-
-	service := auth.NewService(
-		repository,
-		passwordHasher,
-		tokenGenerator,
-		tokenCipher,
-		time.Now,
-		30*time.Minute,
-	)
-
-	input := auth.RegistrationInput{
-		Email:    "correct@example.com",
-		Password: "correct-password",
-	}
-
-	passwordHasher.EXPECT().Hash(input.Password).Return("password-hash", nil)
-
-	rawToken := "raw-verification-token"
-	tokenHash := []byte("verification-token-hash")
-	tokenGenerator.EXPECT().Generate().Return(rawToken, tokenHash, nil)
-
-	tokenCipher.EXPECT().Encrypt([]byte(rawToken), gomock.Any()).Return([]byte("encrypted-token"), nil)
-
 	repositoryErr := errors.New("repository failed")
-	repository.EXPECT().CreateUser(gomock.Any(), gomock.Any()).Return(auth.User{}, repositoryErr)
 
-	createdUser, err := service.Register(context.Background(), input)
+	tests := []struct {
+		name  string
+		input auth.RegistrationInput
 
-	if !errors.Is(err, repositoryErr) {
-		t.Fatalf("expected repository error, got %v", err)
+		prepare func(
+			repository *mocks.MockRepository,
+			passwordManager *mocks.MockPasswordManager,
+			tokenGenerator *mocks.MockVerificationTokenGenerator,
+			tokenCipher *mocks.MockVerificationTokenCipher,
+		)
+
+		wantErr  error
+		wantCode string
+	}{
+		{
+			name: "invalid email",
+			input: auth.RegistrationInput{
+				Email:    "not-an-email",
+				Password: "very-secure-password",
+			},
+			wantCode: "invalid_email",
+		},
+		{
+			name: "password too short",
+			input: auth.RegistrationInput{
+				Email:    "correct@example.com",
+				Password: strings.Repeat("p", 11),
+			},
+			wantCode: "password_too_short",
+		},
+		{
+			name: "password too long",
+			input: auth.RegistrationInput{
+				Email:    "correct@example.com",
+				Password: strings.Repeat("p", 129),
+			},
+			wantCode: "password_too_long",
+		},
+		{
+			name: "password hash error",
+			input: auth.RegistrationInput{
+				Email:    "correct@example.com",
+				Password: "correct-password",
+			},
+
+			prepare: func(
+				_ *mocks.MockRepository,
+				passwordManager *mocks.MockPasswordManager,
+				_ *mocks.MockVerificationTokenGenerator,
+				_ *mocks.MockVerificationTokenCipher,
+			) {
+				passwordManager.
+					EXPECT().
+					Hash("correct-password").
+					Return("", hashErr)
+			},
+
+			wantErr: hashErr,
+		},
+		{
+			name: "token generation error",
+			input: auth.RegistrationInput{
+				Email:    "correct@example.com",
+				Password: "correct-password",
+			},
+
+			prepare: func(
+				_ *mocks.MockRepository,
+				passwordManager *mocks.MockPasswordManager,
+				tokenGenerator *mocks.MockVerificationTokenGenerator,
+				_ *mocks.MockVerificationTokenCipher,
+			) {
+				passwordManager.
+					EXPECT().
+					Hash("correct-password").
+					Return("password-hash", nil)
+
+				tokenGenerator.
+					EXPECT().
+					Generate().
+					Return("", nil, tokenGenerationErr)
+			},
+
+			wantErr: tokenGenerationErr,
+		},
+		{
+			name: "token encryption error",
+			input: auth.RegistrationInput{
+				Email:    "correct@example.com",
+				Password: "correct-password",
+			},
+
+			prepare: func(
+				_ *mocks.MockRepository,
+				passwordManager *mocks.MockPasswordManager,
+				tokenGenerator *mocks.MockVerificationTokenGenerator,
+				tokenCipher *mocks.MockVerificationTokenCipher,
+			) {
+				passwordManager.
+					EXPECT().
+					Hash("correct-password").
+					Return("password-hash", nil)
+
+				rawToken := "raw-verification-token"
+
+				tokenGenerator.
+					EXPECT().
+					Generate().
+					Return(
+						rawToken,
+						[]byte("verification-token-hash"),
+						nil,
+					)
+
+				tokenCipher.
+					EXPECT().
+					Encrypt([]byte(rawToken), gomock.Any()).
+					Return(nil, tokenEncryptionErr)
+			},
+
+			wantErr: tokenEncryptionErr,
+		},
+		{
+			name: "repository error",
+			input: auth.RegistrationInput{
+				Email:    "correct@example.com",
+				Password: "correct-password",
+			},
+
+			prepare: func(
+				repository *mocks.MockRepository,
+				passwordManager *mocks.MockPasswordManager,
+				tokenGenerator *mocks.MockVerificationTokenGenerator,
+				tokenCipher *mocks.MockVerificationTokenCipher,
+			) {
+				passwordManager.
+					EXPECT().
+					Hash("correct-password").
+					Return("password-hash", nil)
+
+				rawToken := "raw-verification-token"
+
+				tokenGenerator.
+					EXPECT().
+					Generate().
+					Return(
+						rawToken,
+						[]byte("verification-token-hash"),
+						nil,
+					)
+
+				tokenCipher.
+					EXPECT().
+					Encrypt([]byte(rawToken), gomock.Any()).
+					Return([]byte("encrypted-token"), nil)
+
+				repository.
+					EXPECT().
+					CreateUser(gomock.Any(), gomock.Any()).
+					Return(auth.User{}, repositoryErr)
+			},
+
+			wantErr: repositoryErr,
+		},
 	}
 
-	if createdUser != (auth.User{}) {
-		t.Errorf("expected empty user, got %v", createdUser)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+
+			repository := mocks.NewMockRepository(ctrl)
+			jwtIssuer := mocks.NewMockAccessTokenIssuer(ctrl)
+			passwordManager := mocks.NewMockPasswordManager(ctrl)
+			tokenGenerator := mocks.NewMockVerificationTokenGenerator(ctrl)
+			tokenCipher := mocks.NewMockVerificationTokenCipher(ctrl)
+
+			service := auth.NewService(
+				repository,
+				jwtIssuer,
+				passwordManager,
+				tokenGenerator,
+				tokenCipher,
+				time.Now,
+				30*time.Minute,
+			)
+
+			if tt.prepare != nil {
+				tt.prepare(
+					repository,
+					passwordManager,
+					tokenGenerator,
+					tokenCipher,
+				)
+			}
+
+			user, err := service.Register(
+				context.Background(),
+				tt.input,
+			)
+
+			if user != (auth.User{}) {
+				t.Errorf(
+					"expected empty user, got %+v",
+					user,
+				)
+			}
+
+			if tt.wantCode != "" {
+				if err == nil {
+					t.Fatal("expected error, got nil")
+				}
+
+				var validationErr *auth.ValidationError
+
+				if !errors.As(err, &validationErr) {
+					t.Fatalf(
+						"expected ValidationError, got %T: %v",
+						err,
+						err,
+					)
+				}
+
+				if validationErr.Code != tt.wantCode {
+					t.Errorf(
+						"expected validation code %q, got %q",
+						tt.wantCode,
+						validationErr.Code,
+					)
+				}
+
+				return
+			}
+
+			if !errors.Is(err, tt.wantErr) {
+				t.Fatalf(
+					"expected error %v, got %v",
+					tt.wantErr,
+					err,
+				)
+			}
+		})
 	}
 }
 
-func TestService_ConfirmEmail_Success(t *testing.T) {
-	ctrl := gomock.NewController(t)
-
-	repository := mocks.NewMockRepository(ctrl)
-	passwordHasher := mocks.NewMockPasswordHasher(ctrl)
-	tokenGenerator := mocks.NewMockVerificationTokenGenerator(ctrl)
-	tokenCipher := mocks.NewMockVerificationTokenCipher(ctrl)
-
+func TestService_ConfirmEmail(t *testing.T) {
 	now := time.Date(
 		2026,
 		time.August,
@@ -449,92 +427,113 @@ func TestService_ConfirmEmail_Success(t *testing.T) {
 		time.UTC,
 	)
 
-	service := auth.NewService(
-		repository,
-		passwordHasher,
-		tokenGenerator,
-		tokenCipher,
-		func() time.Time {
-			return now
-		},
-		30*time.Minute,
-	)
-
-	rawToken := "raw-verification-token"
-	expectedHash := token.Hash(rawToken)
-
-	repository.EXPECT().ConfirmEmail(gomock.Any(), expectedHash, now).Return(nil)
-
-	err := service.ConfirmEmail(context.Background(), rawToken)
-	if err != nil {
-		t.Fatalf("ConfirmEmail() unexpected error: %v", err)
-	}
-}
-
-func TestService_ConfirmEmail_EmptyToken(t *testing.T) {
-	ctrl := gomock.NewController(t)
-
-	repository := mocks.NewMockRepository(ctrl)
-	passwordHasher := mocks.NewMockPasswordHasher(ctrl)
-	tokenGenerator := mocks.NewMockVerificationTokenGenerator(ctrl)
-	tokenCipher := mocks.NewMockVerificationTokenCipher(ctrl)
-
-	service := auth.NewService(
-		repository,
-		passwordHasher,
-		tokenGenerator,
-		tokenCipher,
-		time.Now,
-		30*time.Minute,
-	)
-
-	err := service.ConfirmEmail(context.Background(), "")
-
-	if !errors.Is(err, auth.ErrInvalidToken) {
-		t.Fatalf("expected ErrInvalidToken, got %v", err)
-	}
-}
-
-func TestService_ConfirmEmail_RepositoryError(t *testing.T) {
-	ctrl := gomock.NewController(t)
-
-	repository := mocks.NewMockRepository(ctrl)
-	passwordHasher := mocks.NewMockPasswordHasher(ctrl)
-	tokenGenerator := mocks.NewMockVerificationTokenGenerator(ctrl)
-	tokenCipher := mocks.NewMockVerificationTokenCipher(ctrl)
-
-	now := time.Date(
-		2026,
-		time.August,
-		26,
-		12,
-		0,
-		0,
-		0,
-		time.UTC,
-	)
-
-	service := auth.NewService(
-		repository,
-		passwordHasher,
-		tokenGenerator,
-		tokenCipher,
-		func() time.Time {
-			return now
-		},
-		30*time.Minute,
-	)
-
-	rawToken := "raw-verification-token"
-	expectedHash := token.Hash(rawToken)
-
 	repositoryErr := errors.New("repository failed")
 
-	repository.EXPECT().ConfirmEmail(gomock.Any(), expectedHash, now).Return(repositoryErr)
+	tests := []struct {
+		name     string
+		rawToken string
 
-	err := service.ConfirmEmail(context.Background(), rawToken)
-	if !errors.Is(err, repositoryErr) {
-		t.Fatalf("expected repository error, got %v", err)
+		prepare func(repository *mocks.MockRepository)
+
+		wantErr error
+	}{
+		{
+			name:     "success",
+			rawToken: "raw-verification-token",
+
+			prepare: func(repository *mocks.MockRepository) {
+				expectedHash := token.Hash(
+					"raw-verification-token",
+				)
+
+				repository.
+					EXPECT().
+					ConfirmEmail(
+						gomock.Any(),
+						expectedHash,
+						now,
+					).
+					Return(nil)
+			},
+		},
+		{
+			name:     "empty token",
+			rawToken: "",
+			wantErr:  auth.ErrInvalidToken,
+		},
+		{
+			name:     "repository error",
+			rawToken: "raw-verification-token",
+
+			prepare: func(repository *mocks.MockRepository) {
+				expectedHash := token.Hash(
+					"raw-verification-token",
+				)
+
+				repository.
+					EXPECT().
+					ConfirmEmail(
+						gomock.Any(),
+						expectedHash,
+						now,
+					).
+					Return(repositoryErr)
+			},
+
+			wantErr: repositoryErr,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+
+			repository := mocks.NewMockRepository(ctrl)
+			jwtIssuer := mocks.NewMockAccessTokenIssuer(ctrl)
+			passwordManager := mocks.NewMockPasswordManager(ctrl)
+			tokenGenerator := mocks.NewMockVerificationTokenGenerator(ctrl)
+			tokenCipher := mocks.NewMockVerificationTokenCipher(ctrl)
+
+			service := auth.NewService(
+				repository,
+				jwtIssuer,
+				passwordManager,
+				tokenGenerator,
+				tokenCipher,
+				func() time.Time {
+					return now
+				},
+				30*time.Minute,
+			)
+
+			if tt.prepare != nil {
+				tt.prepare(repository)
+			}
+
+			err := service.ConfirmEmail(
+				context.Background(),
+				tt.rawToken,
+			)
+
+			if tt.wantErr != nil {
+				if !errors.Is(err, tt.wantErr) {
+					t.Fatalf(
+						"expected error %v, got %v",
+						tt.wantErr,
+						err,
+					)
+				}
+
+				return
+			}
+
+			if err != nil {
+				t.Fatalf(
+					"ConfirmEmail() unexpected error: %v",
+					err,
+				)
+			}
+		})
 	}
 }
 
@@ -542,7 +541,8 @@ func TestService_ResendVerification_Success(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
 	repository := mocks.NewMockRepository(ctrl)
-	passwordHasher := mocks.NewMockPasswordHasher(ctrl)
+	jwtIssuer := mocks.NewMockAccessTokenIssuer(ctrl)
+	passwordManager := mocks.NewMockPasswordManager(ctrl)
 	tokenGenerator := mocks.NewMockVerificationTokenGenerator(ctrl)
 	tokenCipher := mocks.NewMockVerificationTokenCipher(ctrl)
 
@@ -561,7 +561,8 @@ func TestService_ResendVerification_Success(t *testing.T) {
 
 	service := auth.NewService(
 		repository,
-		passwordHasher,
+		jwtIssuer,
+		passwordManager,
 		tokenGenerator,
 		tokenCipher,
 		func() time.Time {
@@ -664,128 +665,515 @@ func TestService_ResendVerification_Success(t *testing.T) {
 	}
 }
 
-func TestService_ResendVerification_InvalidEmail(t *testing.T) {
-	ctrl := gomock.NewController(t)
-
-	repository := mocks.NewMockRepository(ctrl)
-	passwordHasher := mocks.NewMockPasswordHasher(ctrl)
-	tokenGenerator := mocks.NewMockVerificationTokenGenerator(ctrl)
-	tokenCipher := mocks.NewMockVerificationTokenCipher(ctrl)
-
-	service := auth.NewService(
-		repository,
-		passwordHasher,
-		tokenGenerator,
-		tokenCipher,
-		time.Now,
-		30*time.Minute,
-	)
-
-	err := service.ResendVerification(context.Background(), "not-an-email")
-
-	var validationErr *auth.ValidationError
-
-	if !errors.As(err, &validationErr) {
-		t.Fatalf("expected ValidationError, got %T: %v", err, err)
-	}
-
-	if validationErr.Code != "invalid_email" {
-		t.Errorf("expected code %q, got %q", "invalid_email", validationErr.Code)
-	}
-}
-
-func TestService_ResendVerification_TokenGenerationError(t *testing.T) {
-	ctrl := gomock.NewController(t)
-
-	repository := mocks.NewMockRepository(ctrl)
-	passwordHasher := mocks.NewMockPasswordHasher(ctrl)
-	tokenGenerator := mocks.NewMockVerificationTokenGenerator(ctrl)
-	tokenCipher := mocks.NewMockVerificationTokenCipher(ctrl)
-
-	service := auth.NewService(
-		repository,
-		passwordHasher,
-		tokenGenerator,
-		tokenCipher,
-		time.Now,
-		30*time.Minute,
-	)
-
+func TestService_ResendVerification_Errors(t *testing.T) {
 	generateTokenErr := errors.New("token generation failed")
-
-	tokenGenerator.EXPECT().Generate().Return("", nil, generateTokenErr)
-
-	err := service.ResendVerification(context.Background(), "test@example.com")
-
-	if !errors.Is(err, generateTokenErr) {
-		t.Fatalf("expected token generation error, got %v", err)
-	}
-}
-
-func TestService_ResendVerification_TokenEncryptionError(t *testing.T) {
-	ctrl := gomock.NewController(t)
-
-	repository := mocks.NewMockRepository(ctrl)
-	passwordHasher := mocks.NewMockPasswordHasher(ctrl)
-	tokenGenerator := mocks.NewMockVerificationTokenGenerator(ctrl)
-	tokenCipher := mocks.NewMockVerificationTokenCipher(ctrl)
-
-	service := auth.NewService(
-		repository,
-		passwordHasher,
-		tokenGenerator,
-		tokenCipher,
-		time.Now,
-		30*time.Minute,
-	)
-
-	rawToken := "raw-verification-token"
-	tokenHash := []byte("verification-token-hash")
-
-	tokenGenerator.EXPECT().Generate().Return(rawToken, tokenHash, nil)
-
 	encryptTokenErr := errors.New("token encryption failed")
-
-	tokenCipher.EXPECT().Encrypt([]byte(rawToken), gomock.Any()).Return(nil, encryptTokenErr)
-
-	err := service.ResendVerification(context.Background(), "test@example.com")
-
-	if !errors.Is(err, encryptTokenErr) {
-		t.Fatalf("expected token encryption error, got %v", err)
-	}
-}
-
-func TestService_ResendVerification_RepositoryError(t *testing.T) {
-	ctrl := gomock.NewController(t)
-
-	repository := mocks.NewMockRepository(ctrl)
-	passwordHasher := mocks.NewMockPasswordHasher(ctrl)
-	tokenGenerator := mocks.NewMockVerificationTokenGenerator(ctrl)
-	tokenCipher := mocks.NewMockVerificationTokenCipher(ctrl)
-
-	service := auth.NewService(
-		repository,
-		passwordHasher,
-		tokenGenerator,
-		tokenCipher,
-		time.Now,
-		30*time.Minute,
-	)
-
-	rawToken := "raw-verification-token"
-	tokenHash := []byte("verification-token-hash")
-
-	tokenGenerator.EXPECT().Generate().Return(rawToken, tokenHash, nil)
-
-	tokenCipher.EXPECT().Encrypt([]byte(rawToken), gomock.Any()).Return([]byte("encrypted-token"), nil)
-
 	repositoryErr := errors.New("repository failed")
 
-	repository.EXPECT().ResendVerification(gomock.Any(), gomock.Any()).Return(repositoryErr)
+	tests := []struct {
+		name  string
+		email string
 
-	err := service.ResendVerification(context.Background(), "test@example.com")
+		prepare func(
+			repository *mocks.MockRepository,
+			tokenGenerator *mocks.MockVerificationTokenGenerator,
+			tokenCipher *mocks.MockVerificationTokenCipher,
+		)
 
-	if !errors.Is(err, repositoryErr) {
-		t.Fatalf("expected repository error, got %v", err)
+		wantErr  error
+		wantCode string
+	}{
+		{
+			name:     "invalid email",
+			email:    "not-an-email",
+			wantCode: "invalid_email",
+		},
+		{
+			name:  "token generation error",
+			email: "test@example.com",
+
+			prepare: func(
+				_ *mocks.MockRepository,
+				tokenGenerator *mocks.MockVerificationTokenGenerator,
+				_ *mocks.MockVerificationTokenCipher,
+			) {
+				tokenGenerator.
+					EXPECT().
+					Generate().
+					Return("", nil, generateTokenErr)
+			},
+
+			wantErr: generateTokenErr,
+		},
+		{
+			name:  "token encryption error",
+			email: "test@example.com",
+
+			prepare: func(
+				_ *mocks.MockRepository,
+				tokenGenerator *mocks.MockVerificationTokenGenerator,
+				tokenCipher *mocks.MockVerificationTokenCipher,
+			) {
+				rawToken := "raw-verification-token"
+
+				tokenGenerator.
+					EXPECT().
+					Generate().
+					Return(
+						rawToken,
+						[]byte("verification-token-hash"),
+						nil,
+					)
+
+				tokenCipher.
+					EXPECT().
+					Encrypt(
+						[]byte(rawToken),
+						gomock.Any(),
+					).
+					Return(nil, encryptTokenErr)
+			},
+
+			wantErr: encryptTokenErr,
+		},
+		{
+			name:  "repository error",
+			email: "test@example.com",
+
+			prepare: func(
+				repository *mocks.MockRepository,
+				tokenGenerator *mocks.MockVerificationTokenGenerator,
+				tokenCipher *mocks.MockVerificationTokenCipher,
+			) {
+				rawToken := "raw-verification-token"
+
+				tokenGenerator.
+					EXPECT().
+					Generate().
+					Return(
+						rawToken,
+						[]byte("verification-token-hash"),
+						nil,
+					)
+
+				tokenCipher.
+					EXPECT().
+					Encrypt(
+						[]byte(rawToken),
+						gomock.Any(),
+					).
+					Return(
+						[]byte("encrypted-token"),
+						nil,
+					)
+
+				repository.
+					EXPECT().
+					ResendVerification(
+						gomock.Any(),
+						gomock.Any(),
+					).
+					Return(repositoryErr)
+			},
+
+			wantErr: repositoryErr,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+
+			repository := mocks.NewMockRepository(ctrl)
+			jwtIssuer := mocks.NewMockAccessTokenIssuer(ctrl)
+			passwordManager := mocks.NewMockPasswordManager(ctrl)
+			tokenGenerator := mocks.NewMockVerificationTokenGenerator(ctrl)
+			tokenCipher := mocks.NewMockVerificationTokenCipher(ctrl)
+
+			service := auth.NewService(
+				repository,
+				jwtIssuer,
+				passwordManager,
+				tokenGenerator,
+				tokenCipher,
+				time.Now,
+				30*time.Minute,
+			)
+
+			if tt.prepare != nil {
+				tt.prepare(
+					repository,
+					tokenGenerator,
+					tokenCipher,
+				)
+			}
+
+			err := service.ResendVerification(
+				context.Background(),
+				tt.email,
+			)
+
+			if tt.wantCode != "" {
+				var validationErr *auth.ValidationError
+
+				if !errors.As(err, &validationErr) {
+					t.Fatalf(
+						"expected ValidationError, got %T: %v",
+						err,
+						err,
+					)
+				}
+
+				if validationErr.Code != tt.wantCode {
+					t.Errorf(
+						"expected code %q, got %q",
+						tt.wantCode,
+						validationErr.Code,
+					)
+				}
+
+				return
+			}
+
+			if !errors.Is(err, tt.wantErr) {
+				t.Fatalf(
+					"expected error %v, got %v",
+					tt.wantErr,
+					err,
+				)
+			}
+		})
+	}
+}
+
+func TestService_Login(t *testing.T) {
+	now := time.Date(
+		2026,
+		time.August,
+		30,
+		12,
+		0,
+		0,
+		0,
+		time.UTC,
+	)
+
+	userID := uuid.New()
+	verifiedAt := now.Add(-time.Hour)
+
+	repositoryErr := errors.New("repository failed")
+	verifyErr := errors.New("verify failed")
+	issueErr := errors.New("issue token failed")
+
+	tests := []struct {
+		name     string
+		email    string
+		password string
+
+		prepare func(
+			repository *mocks.MockRepository,
+			jwtIssuer *mocks.MockAccessTokenIssuer,
+			passwordManager *mocks.MockPasswordManager,
+		)
+
+		wantToken string
+		wantErr   error
+		wantCode  string
+	}{
+		{
+			name:     "success",
+			email:    " Test@Example.COM ",
+			password: "correct-password",
+
+			prepare: func(
+				repository *mocks.MockRepository,
+				jwtIssuer *mocks.MockAccessTokenIssuer,
+				passwordManager *mocks.MockPasswordManager,
+			) {
+				repository.
+					EXPECT().
+					GetUserForLogin(gomock.Any(), "test@example.com").
+					Return(auth.LoginUser{
+						ID:           userID,
+						PasswordHash: "password-hash",
+						VerifiedAt:   &verifiedAt,
+					}, nil)
+
+				passwordManager.
+					EXPECT().
+					Verify("password-hash", "correct-password").
+					Return(nil)
+
+				jwtIssuer.
+					EXPECT().
+					Issue(userID, now).
+					Return("access-token", nil)
+			},
+
+			wantToken: "access-token",
+		},
+		{
+			name:     "invalid email",
+			email:    "not-an-email",
+			password: "correct-password",
+			wantCode: "invalid_email",
+		},
+		{
+			name:     "password required",
+			email:    "test@example.com",
+			password: "",
+			wantCode: "password_required",
+		},
+		{
+			name:     "user not found",
+			email:    "test@example.com",
+			password: "correct-password",
+
+			prepare: func(
+				repository *mocks.MockRepository,
+				_ *mocks.MockAccessTokenIssuer,
+				_ *mocks.MockPasswordManager,
+			) {
+				repository.
+					EXPECT().
+					GetUserForLogin(gomock.Any(), "test@example.com").
+					Return(auth.LoginUser{}, auth.ErrUserNotFound)
+			},
+
+			wantErr: auth.ErrInvalidCredentials,
+		},
+		{
+			name:     "repository error",
+			email:    "test@example.com",
+			password: "correct-password",
+
+			prepare: func(
+				repository *mocks.MockRepository,
+				_ *mocks.MockAccessTokenIssuer,
+				_ *mocks.MockPasswordManager,
+			) {
+				repository.
+					EXPECT().
+					GetUserForLogin(gomock.Any(), "test@example.com").
+					Return(auth.LoginUser{}, repositoryErr)
+			},
+
+			wantErr: repositoryErr,
+		},
+		{
+			name:     "invalid password",
+			email:    "test@example.com",
+			password: "wrong-password",
+
+			prepare: func(
+				repository *mocks.MockRepository,
+				_ *mocks.MockAccessTokenIssuer,
+				passwordManager *mocks.MockPasswordManager,
+			) {
+				repository.
+					EXPECT().
+					GetUserForLogin(gomock.Any(), "test@example.com").
+					Return(auth.LoginUser{
+						ID:           userID,
+						PasswordHash: "password-hash",
+						VerifiedAt:   &verifiedAt,
+					}, nil)
+
+				passwordManager.
+					EXPECT().
+					Verify("password-hash", "wrong-password").
+					Return(auth.ErrInvalidCredentials)
+			},
+
+			wantErr: auth.ErrInvalidCredentials,
+		},
+		{
+			name:     "password verify error",
+			email:    "test@example.com",
+			password: "correct-password",
+
+			prepare: func(
+				repository *mocks.MockRepository,
+				_ *mocks.MockAccessTokenIssuer,
+				passwordManager *mocks.MockPasswordManager,
+			) {
+				repository.
+					EXPECT().
+					GetUserForLogin(gomock.Any(), "test@example.com").
+					Return(auth.LoginUser{
+						ID:           userID,
+						PasswordHash: "password-hash",
+						VerifiedAt:   &verifiedAt,
+					}, nil)
+
+				passwordManager.
+					EXPECT().
+					Verify("password-hash", "correct-password").
+					Return(verifyErr)
+			},
+
+			wantErr: verifyErr,
+		},
+		{
+			name:     "email not verified",
+			email:    "test@example.com",
+			password: "correct-password",
+
+			prepare: func(
+				repository *mocks.MockRepository,
+				_ *mocks.MockAccessTokenIssuer,
+				passwordManager *mocks.MockPasswordManager,
+			) {
+				repository.
+					EXPECT().
+					GetUserForLogin(gomock.Any(), "test@example.com").
+					Return(auth.LoginUser{
+						ID:           userID,
+						PasswordHash: "password-hash",
+						VerifiedAt:   nil,
+					}, nil)
+
+				passwordManager.
+					EXPECT().
+					Verify("password-hash", "correct-password").
+					Return(nil)
+			},
+
+			wantErr: auth.ErrEmailNotVerified,
+		},
+		{
+			name:     "access token issue error",
+			email:    "test@example.com",
+			password: "correct-password",
+
+			prepare: func(
+				repository *mocks.MockRepository,
+				jwtIssuer *mocks.MockAccessTokenIssuer,
+				passwordManager *mocks.MockPasswordManager,
+			) {
+				repository.
+					EXPECT().
+					GetUserForLogin(gomock.Any(), "test@example.com").
+					Return(auth.LoginUser{
+						ID:           userID,
+						PasswordHash: "password-hash",
+						VerifiedAt:   &verifiedAt,
+					}, nil)
+
+				passwordManager.
+					EXPECT().
+					Verify("password-hash", "correct-password").
+					Return(nil)
+
+				jwtIssuer.
+					EXPECT().
+					Issue(userID, now).
+					Return("", issueErr)
+			},
+
+			wantErr: issueErr,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+
+			repository := mocks.NewMockRepository(ctrl)
+			jwtIssuer := mocks.NewMockAccessTokenIssuer(ctrl)
+			passwordManager := mocks.NewMockPasswordManager(ctrl)
+			tokenGenerator := mocks.NewMockVerificationTokenGenerator(ctrl)
+			tokenCipher := mocks.NewMockVerificationTokenCipher(ctrl)
+
+			service := auth.NewService(
+				repository,
+				jwtIssuer,
+				passwordManager,
+				tokenGenerator,
+				tokenCipher,
+				func() time.Time {
+					return now
+				},
+				30*time.Minute,
+			)
+
+			if tt.prepare != nil {
+				tt.prepare(
+					repository,
+					jwtIssuer,
+					passwordManager,
+				)
+			}
+
+			gotToken, err := service.Login(
+				context.Background(),
+				tt.email,
+				tt.password,
+			)
+
+			if tt.wantCode != "" {
+				if err == nil {
+					t.Fatal("expected error, got nil")
+				}
+
+				var validationErr *auth.ValidationError
+
+				if !errors.As(err, &validationErr) {
+					t.Fatalf(
+						"expected ValidationError, got %T: %v",
+						err,
+						err,
+					)
+				}
+
+				if validationErr.Code != tt.wantCode {
+					t.Errorf(
+						"expected validation code %q, got %q",
+						tt.wantCode,
+						validationErr.Code,
+					)
+				}
+
+				if gotToken != "" {
+					t.Errorf(
+						"expected empty access token, got %q",
+						gotToken,
+					)
+				}
+
+				return
+			}
+
+			if tt.wantErr != nil {
+				if !errors.Is(err, tt.wantErr) {
+					t.Fatalf(
+						"expected error %v, got %v",
+						tt.wantErr,
+						err,
+					)
+				}
+
+				if gotToken != "" {
+					t.Errorf(
+						"expected empty access token, got %q",
+						gotToken,
+					)
+				}
+
+				return
+			}
+
+			if err != nil {
+				t.Fatalf("Login() unexpected error: %v", err)
+			}
+
+			if gotToken != tt.wantToken {
+				t.Errorf(
+					"expected access token %q, got %q",
+					tt.wantToken,
+					gotToken,
+				)
+			}
+		})
 	}
 }

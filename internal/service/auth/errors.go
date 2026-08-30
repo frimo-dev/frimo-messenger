@@ -3,6 +3,9 @@ package auth
 import "errors"
 
 var (
+	ErrInvalidCredentials = errors.New("invalid credentials")
+	ErrEmailNotVerified   = errors.New("email not verified")
+
 	ErrUserNotFound      = errors.New("user with such email does not exist")
 	ErrAlreadyVerified   = errors.New("email already verified")
 	ErrResendCooldown    = errors.New("verification resend cooldown")

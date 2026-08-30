@@ -24,6 +24,26 @@ func NewAuthRepository(pool *pgxpool.Pool) *AuthRepository {
 	return &AuthRepository{pool: pool}
 }
 
+func (r *AuthRepository) GetUserForLogin(ctx context.Context, email string) (auth.LoginUser, error) {
+	const query = `
+		SELECT id, password_hash, email_verified_at
+		FROM users
+		WHERE email = $1;
+	`
+
+	var loginUser auth.LoginUser
+
+	err := r.pool.QueryRow(ctx, query, email).Scan(&loginUser.ID, &loginUser.PasswordHash, &loginUser.VerifiedAt)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return auth.LoginUser{}, auth.ErrUserNotFound
+		}
+
+		return auth.LoginUser{}, err
+	}
+	return loginUser, nil
+}
+
 func (r *AuthRepository) CreateUser(ctx context.Context, input auth.CreateUserInput) (auth.User, error) {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {

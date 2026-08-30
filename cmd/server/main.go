@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/base64"
 	"errors"
 	"net/http"
 	"os"
@@ -42,20 +41,16 @@ func main() {
 	defer databasePool.Close()
 	logger.Info("database connection established")
 
-	encryptionKey, err := base64.StdEncoding.DecodeString(cfg.Verification.EncryptionKey)
-	if err != nil {
-		logger.Fatal("failed decode verification encryption key", zap.Error(err))
-	}
-
-	verificationTokenCipher, err := secret.NewCipher(encryptionKey)
+	verificationTokenCipher, err := secret.NewCipher(cfg.Auth.Verification.EncryptionKey)
 	if err != nil {
 		logger.Fatal("failed creation verification token cipher", zap.Error(err))
 	}
 
+	jwtIssuer := token.NewJWTIssuer(cfg.Auth.Login.AccessTokenSecret, cfg.Auth.Login.AccessTokenTTL)
 	authRepository := postgres.NewAuthRepository(databasePool)
-	passwordHasher := password.NewArgon2Hasher()
+	passwordManager := password.NewArgon2Manager()
 	tokenGenerator := token.NewGenerator()
-	authService := auth.NewService(authRepository, passwordHasher, tokenGenerator, verificationTokenCipher, time.Now, cfg.VerificationTokenLifetime)
+	authService := auth.NewService(authRepository, jwtIssuer, passwordManager, tokenGenerator, verificationTokenCipher, time.Now, cfg.VerificationTokenLifetime)
 
 	api := httpapi.New(logger, authService)
 

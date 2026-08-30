@@ -49,7 +49,6 @@ func writeError(w http.ResponseWriter, status int, code string, message string) 
 	})
 }
 
-// TODO: если json.Marshal упадет, то клиенту не придет корректный ответ, поскольку он не дойдет до записи
 func writeJSON(w http.ResponseWriter, status int, value any) error {
 	body, err := json.Marshal(value)
 	if err != nil {

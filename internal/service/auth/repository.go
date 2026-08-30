@@ -33,7 +33,14 @@ type ResendVerificationInput struct {
 	OutboxEvent  outbox.Event
 }
 
+type LoginUser struct {
+	ID           uuid.UUID
+	PasswordHash string
+	VerifiedAt   *time.Time
+}
+
 type Repository interface {
+	GetUserForLogin(ctx context.Context, email string) (LoginUser, error)
 	CreateUser(ctx context.Context, data CreateUserInput) (User, error)
 	ConfirmEmail(ctx context.Context, tokenHash []byte, confirmedAt time.Time) error
 	ResendVerification(ctx context.Context, input ResendVerificationInput) error

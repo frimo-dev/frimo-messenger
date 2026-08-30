@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/base64"
 	"os"
 	"os/signal"
 	"syscall"
@@ -41,12 +40,7 @@ func main() {
 	}
 	defer databasePool.Close()
 
-	encryptionKey, err := base64.StdEncoding.DecodeString(cfg.Verification.EncryptionKey)
-	if err != nil {
-		logger.Fatal("failed decode verification encryption key", zap.Error(err))
-	}
-
-	tokenCipher, err := secret.NewCipher(encryptionKey)
+	tokenCipher, err := secret.NewCipher(cfg.Auth.Verification.EncryptionKey)
 	if err != nil {
 		logger.Fatal("failed creation verification token cipher", zap.Error(err))
 	}

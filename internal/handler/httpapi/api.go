@@ -9,6 +9,7 @@ import (
 )
 
 type AuthService interface {
+	Login(ctx context.Context, email string, password string) (string, error)
 	Register(ctx context.Context, input auth.RegistrationInput) (auth.User, error)
 	ConfirmEmail(ctx context.Context, rawToken string) error
 	ResendVerification(ctx context.Context, email string) error
@@ -49,4 +50,5 @@ func (a *API) registerRoutes() {
 	// TODO: формально GET здесь не подходит, так как меняется состояние при подтверждении email
 	a.mux.HandleFunc("GET /auth/verify-email", a.verifyEmail)
 	a.mux.HandleFunc("POST /auth/resend", a.resendVerificationToken)
+	a.mux.HandleFunc("POST /auth/login", a.login)
 }

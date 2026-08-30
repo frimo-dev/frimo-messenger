@@ -19,7 +19,7 @@ func (g *Generator) Generate() (string, []byte, error) {
 	randomBytes := make([]byte, tokenSize)
 
 	if _, err := rand.Read(randomBytes); err != nil {
-		return "", nil, fmt.Errorf("generate random token: %w", err)
+		return "", nil, fmt.Errorf("failed generate random token: %w", err)
 	}
 
 	// base64.RawURLEncoding - не использует проблемные для URL символы + и /,

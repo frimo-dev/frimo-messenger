@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/mail"
 	"strings"
@@ -15,8 +16,13 @@ import (
 	"github.com/frimo-dev/frimo-messenger/internal/security/token"
 )
 
-type PasswordHasher interface {
+type AccessTokenIssuer interface {
+	Issue(userID uuid.UUID, issuedAt time.Time) (string, error)
+}
+
+type PasswordManager interface {
 	Hash(password string) (string, error)
+	Verify(encodedHash, password string) error
 }
 
 type VerificationTokenGenerator interface {
@@ -29,22 +35,68 @@ type VerificationTokenCipher interface {
 
 type Service struct {
 	repository                Repository
-	passwordHasher            PasswordHasher
+	accessTokenIssuer         AccessTokenIssuer
+	passwordManager           PasswordManager
 	tokenGenerator            VerificationTokenGenerator
 	tokenCipher               VerificationTokenCipher
 	now                       func() time.Time
 	verificationTokenLifetime time.Duration
 }
 
-func NewService(repository Repository, passwordHasher PasswordHasher, tokenGenerator VerificationTokenGenerator, tokenCipher VerificationTokenCipher, now func() time.Time, verificationTokenLifetime time.Duration) *Service {
+func NewService(repository Repository, accessTokenIssuer AccessTokenIssuer, passwordManager PasswordManager, tokenGenerator VerificationTokenGenerator, tokenCipher VerificationTokenCipher, now func() time.Time, verificationTokenLifetime time.Duration) *Service {
 	return &Service{
 		repository:                repository,
-		passwordHasher:            passwordHasher,
+		accessTokenIssuer:         accessTokenIssuer,
+		passwordManager:           passwordManager,
 		tokenGenerator:            tokenGenerator,
 		tokenCipher:               tokenCipher,
 		now:                       now,
 		verificationTokenLifetime: verificationTokenLifetime,
 	}
+}
+
+func (s *Service) Login(ctx context.Context, email string, password string) (string, error) {
+	email = normalizeEmail(email)
+
+	if err := validateEmail(email); err != nil {
+		return "", err
+	}
+
+	if password == "" {
+		return "", &ValidationError{
+			Code:    "password_required",
+			Field:   "password",
+			Message: "password is required",
+		}
+	}
+
+	loginUser, err := s.repository.GetUserForLogin(ctx, email)
+	if err != nil {
+		if errors.Is(err, ErrUserNotFound) {
+			return "", ErrInvalidCredentials
+		}
+		return "", fmt.Errorf("failed get user for login: %w", err)
+	}
+
+	err = s.passwordManager.Verify(loginUser.PasswordHash, password)
+	if err != nil {
+		if !errors.Is(err, ErrInvalidCredentials) {
+			return "", fmt.Errorf("failed verify password: %w", err)
+		}
+
+		return "", err
+	}
+
+	if loginUser.VerifiedAt == nil {
+		return "", ErrEmailNotVerified
+	}
+
+	accessToken, err := s.accessTokenIssuer.Issue(loginUser.ID, s.now().UTC())
+	if err != nil {
+		return "", fmt.Errorf("failed issue access token: %w", err)
+	}
+
+	return accessToken, nil
 }
 
 func (s *Service) Register(ctx context.Context, input RegistrationInput) (User, error) {
@@ -58,7 +110,7 @@ func (s *Service) Register(ctx context.Context, input RegistrationInput) (User, 
 		return User{}, err
 	}
 
-	passwordHash, err := s.passwordHasher.Hash(input.Password)
+	passwordHash, err := s.passwordManager.Hash(input.Password)
 	if err != nil {
 		return User{}, fmt.Errorf("hash password: %w", err)
 	}

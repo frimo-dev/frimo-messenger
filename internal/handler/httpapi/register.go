@@ -60,7 +60,7 @@ func (a *API) registerUser(w http.ResponseWriter, r *http.Request) {
 			a.logger.Error(
 				"failed to register user",
 				zap.Error(err),
-				zap.String(string(requestIDKey), requestIDFromContext(r.Context())),
+				zap.String("request_id", requestIDFromContext(r.Context())),
 			)
 
 			a.respondError(
