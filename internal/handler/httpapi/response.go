@@ -23,7 +23,7 @@ func (a *API) respondError(ctx context.Context, w http.ResponseWriter, status in
 		a.logger.Error(
 			"failed to write error response",
 			zap.Error(err),
-			zap.String(string(requestIDKey), requestIDFromContext(ctx)),
+			zap.String("request_id", requestIDFromContext(ctx)),
 			zap.Int("status", status),
 			zap.String("code", code),
 		)
@@ -35,7 +35,7 @@ func (a *API) respondJSON(ctx context.Context, w http.ResponseWriter, status int
 		a.logger.Error(
 			"failed to write JSON response",
 			zap.Error(err),
-			zap.String(string(requestIDKey), requestIDFromContext(ctx)),
+			zap.String("request_id", requestIDFromContext(ctx)),
 			zap.Int("status", status),
 		)
 	}
