@@ -20,7 +20,7 @@ func TestJWTIssuer_Success(t *testing.T) {
 	secret := []byte("some-test-secret")
 	lifetime := 15 * time.Minute
 
-	jwtIssuer := token.NewJWTIssuer(secret, lifetime)
+	jwtIssuer := token.NewJWTManager(secret, lifetime)
 
 	strJWT, err := jwtIssuer.Issue(userID, issuedAt)
 	if err != nil {

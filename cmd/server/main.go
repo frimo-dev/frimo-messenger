@@ -46,7 +46,7 @@ func main() {
 		logger.Fatal("failed creation verification token cipher", zap.Error(err))
 	}
 
-	jwtIssuer := token.NewJWTIssuer(cfg.Auth.Login.AccessTokenSecret, cfg.Auth.Login.AccessTokenTTL)
+	jwtIssuer := token.NewJWTManager(cfg.Auth.Login.AccessTokenSecret, cfg.Auth.Login.AccessTokenTTL)
 	authRepository := postgres.NewAuthRepository(databasePool)
 	passwordManager := password.NewArgon2Manager()
 	tokenGenerator := token.NewGenerator()
