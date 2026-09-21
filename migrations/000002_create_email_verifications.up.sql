@@ -1,4 +1,4 @@
-CREATE TABLE email_verifications (
+CREATE TABLE IF NOT EXISTS email_verifications (
 	id UUID PRIMARY KEY,
 	user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
 	token_hash BYTEA NOT NULL UNIQUE,
@@ -9,4 +9,4 @@ CREATE TABLE email_verifications (
 	created_at TIMESTAMPTZ NOT NULL
 );
 
-CREATE INDEX email_verifications_user_id_idx ON email_verifications (user_id)
+CREATE INDEX IF NOT EXISTS email_verifications_user_id_idx ON email_verifications (user_id)
