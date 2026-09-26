@@ -5,6 +5,7 @@ import "errors"
 var (
 	ErrInvalidCredentials = errors.New("invalid credentials")
 	ErrEmailNotVerified   = errors.New("email not verified")
+	ErrEmailAlreadyExists = errors.New("email already exists")
 
 	ErrUserNotFound      = errors.New("user with such email does not exist")
 	ErrAlreadyVerified   = errors.New("email already verified")
@@ -15,9 +16,10 @@ var (
 	ErrExpiredToken = errors.New("verification token expired")
 	ErrUsedToken    = errors.New("verification token already used")
 	ErrRevokedToken = errors.New("verification token is revoked")
-)
 
-var ErrEmailAlreadyExists = errors.New("email already exists")
+	ErrAccessTokenNotStored = errors.New("access token not stored")
+	ErrAccessTokenInvalid   = errors.New("invalid access token")
+)
 
 type ValidationError struct {
 	Code    string

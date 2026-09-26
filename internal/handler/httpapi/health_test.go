@@ -19,7 +19,7 @@ func TestAPI_Health_Success(t *testing.T) {
 	userService := mocks.NewMockUserService(ctrl)
 	accessTokenVerifier := mocks.NewMockAccessTokenVerifier(ctrl)
 
-	api := httpapi.New(zap.NewNop(), accessTokenVerifier, authService, userService)
+	api := httpapi.New(zap.NewNop(), authService, userService)
 
 	req := httptest.NewRequest(
 		http.MethodGet,

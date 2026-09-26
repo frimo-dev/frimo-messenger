@@ -11,10 +11,11 @@ import (
 )
 
 type AuthService interface {
-	Login(ctx context.Context, email string, password string) (string, error)
+	Login(ctx context.Context, input auth.LoginInput) (auth.LoginResult, error)
 	Register(ctx context.Context, input auth.RegistrationInput) (auth.User, error)
 	ConfirmEmail(ctx context.Context, rawToken string) error
 	ResendVerification(ctx context.Context, email string) error
+	Authenticate(ctx context.Context, rawAccessToken string) (auth.Identity, error)
 }
 
 type UserService interface {
@@ -24,20 +25,18 @@ type UserService interface {
 type API struct {
 	mux *http.ServeMux
 
-	logger              *zap.Logger
-	accessTokenVerifier AccessTokenVerifier
+	logger *zap.Logger
 
 	authService AuthService
 	userService UserService
 }
 
-func New(logger *zap.Logger, accessTokenVerifier AccessTokenVerifier, authService AuthService, userService UserService) *API {
+func New(logger *zap.Logger, authService AuthService, userService UserService) *API {
 	api := &API{
-		mux:                 http.NewServeMux(),
-		logger:              logger,
-		accessTokenVerifier: accessTokenVerifier,
-		authService:         authService,
-		userService:         userService,
+		mux:         http.NewServeMux(),
+		logger:      logger,
+		authService: authService,
+		userService: userService,
 	}
 
 	api.registerRoutes()
@@ -62,5 +61,5 @@ func (a *API) registerRoutes() {
 	a.mux.HandleFunc("POST /auth/resend", a.resendVerificationToken)
 	a.mux.HandleFunc("POST /auth/login", a.login)
 
-	a.mux.Handle("GET /me", AuthenticationMiddleware(a.logger, a.accessTokenVerifier, http.HandlerFunc(a.me)))
+	a.mux.Handle("GET /me", AuthenticationMiddleware(a.logger, a.authService, http.HandlerFunc(a.me)))
 }

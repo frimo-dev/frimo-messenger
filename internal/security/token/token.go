@@ -25,12 +25,12 @@ func (g *Generator) Generate() (string, []byte, error) {
 	// base64.RawURLEncoding - не использует проблемные для URL символы + и /,
 	// не добавляет padding =, удобно передаётся как query parameter
 	rawToken := base64.RawURLEncoding.EncodeToString(randomBytes)
-	tokenHash := Hash(rawToken)
+	tokenHash := g.Hash(rawToken)
 
 	return rawToken, tokenHash, nil
 }
 
-func Hash(rawToken string) []byte {
+func (g *Generator) Hash(rawToken string) []byte {
 	sum := sha256.Sum256([]byte(rawToken))
 	return sum[:]
 }

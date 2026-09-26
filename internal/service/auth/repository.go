@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"net/netip"
 	"time"
 	"uuid"
 
@@ -44,4 +45,29 @@ type Repository interface {
 	CreateUser(ctx context.Context, data CreateUserInput) (User, error)
 	ConfirmEmail(ctx context.Context, tokenHash []byte, confirmedAt time.Time) error
 	ResendVerification(ctx context.Context, input ResendVerificationInput) error
+}
+
+type Session struct {
+	ID     uuid.UUID
+	UserID uuid.UUID
+
+	DeviceName string
+
+	CreatedIP netip.Addr
+	LastIP    netip.Addr
+
+	CreatedAt  time.Time
+	LastSeenAt time.Time
+	ExpiresAt  time.Time
+}
+
+type RefreshToken struct {
+	ID        uuid.UUID
+	SessionID uuid.UUID
+	TokenHash []byte
+	CreatedAt time.Time
+}
+
+type SessionRepository interface {
+	CreateSession(ctx context.Context, session Session, refreshToken RefreshToken) error
 }

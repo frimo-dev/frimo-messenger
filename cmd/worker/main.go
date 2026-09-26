@@ -7,10 +7,10 @@ import (
 	"syscall"
 	"time"
 
+	postgres2 "github.com/frimo-dev/frimo-messenger/internal/adapter/repository/postgres"
 	"github.com/frimo-dev/frimo-messenger/internal/config"
 	"github.com/frimo-dev/frimo-messenger/internal/handler/event"
 	"github.com/frimo-dev/frimo-messenger/internal/outbox"
-	"github.com/frimo-dev/frimo-messenger/internal/postgres"
 	"github.com/frimo-dev/frimo-messenger/internal/security/secret"
 	"github.com/frimo-dev/frimo-messenger/internal/service/email"
 	"go.uber.org/zap"
@@ -32,7 +32,7 @@ func main() {
 	defer stop()
 
 	databaseContext, cancelDatabase := context.WithTimeout(rootContext, 5*time.Second)
-	databasePool, err := postgres.Open(databaseContext, cfg.Database.URL)
+	databasePool, err := postgres2.Open(databaseContext, cfg.Database.URL)
 	cancelDatabase()
 
 	if err != nil {
@@ -47,7 +47,7 @@ func main() {
 
 	emailSender := email.NewLogSender(logger)
 
-	verificationRepository := postgres.NewAuthRepository(databasePool)
+	verificationRepository := postgres2.NewAuthRepository(databasePool)
 
 	dispatcher := event.NewDispatcher(
 		emailSender,
@@ -57,7 +57,7 @@ func main() {
 		time.Now,
 	)
 
-	outboxRepository := postgres.NewOutboxRepository(databasePool)
+	outboxRepository := postgres2.NewOutboxRepository(databasePool)
 
 	processor := outbox.NewProcessor(
 		outboxRepository,

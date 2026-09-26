@@ -17,6 +17,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      redis:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/health"]
       interval: 5s
@@ -56,6 +58,20 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+  redis:
+    image: redis:8.10.2-alpine
+    ports:
+      - "${REDIS_ADDR}:6379"
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD}"]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: [ "CMD-SHELL", "redis-cli -a \"$${REDIS_PASSWORD}\" ping | grep PONG" ]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
   migrate:
     image: migrate/migrate
     profiles:
@@ -71,3 +87,4 @@ services:
         condition: service_healthy
 volumes:
   postgres_data:
+  redis_data:

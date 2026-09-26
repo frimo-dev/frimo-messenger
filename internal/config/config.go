@@ -10,6 +10,7 @@ import (
 type Config struct {
 	HTTP             HTTPConfig
 	Database         DatabaseConfig
+	Cache            RedisConfig
 	App              AppConfig
 	Auth             AuthConfig
 	GracefulShutdown GracefulShutdownConfig
@@ -25,6 +26,12 @@ type DatabaseConfig struct {
 	URL string
 }
 
+type RedisConfig struct {
+	Addr     string
+	Password string
+	DB       int
+}
+
 type AuthConfig struct {
 	Login        LoginConfig
 	Verification VerificationConfig
@@ -33,6 +40,7 @@ type AuthConfig struct {
 type LoginConfig struct {
 	AccessTokenSecret []byte
 	AccessTokenTTL    time.Duration
+	RefreshTokenTTL   time.Duration
 }
 
 type VerificationConfig struct {
@@ -78,6 +86,11 @@ func Load() (Config, error) {
 		Database: DatabaseConfig{
 			URL: os.Getenv("DATABASE_URL"),
 		},
+		Cache: RedisConfig{
+			Addr:     os.Getenv("REDIS_ADDR"),
+			Password: os.Getenv("REDIS_PASSWORD"),
+			DB:       0,
+		},
 		App: AppConfig{
 			BaseURL: getEnv("APP_BASE_URL", "http://localhost"),
 		},
@@ -85,6 +98,7 @@ func Load() (Config, error) {
 			Login: LoginConfig{
 				AccessTokenSecret: accessTokenSecret,
 				AccessTokenTTL:    15 * time.Minute,
+				RefreshTokenTTL:   time.Hour * 24 * 30,
 			},
 			Verification: VerificationConfig{
 				EncryptionKey: encryptionKey,

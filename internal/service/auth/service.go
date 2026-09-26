@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/mail"
+	"net/netip"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -13,20 +14,16 @@ import (
 
 	"github.com/frimo-dev/frimo-messenger/internal/dto"
 	"github.com/frimo-dev/frimo-messenger/internal/outbox"
-	"github.com/frimo-dev/frimo-messenger/internal/security/token"
 )
 
-type AccessTokenIssuer interface {
-	Issue(userID uuid.UUID, issuedAt time.Time) (string, error)
+type TokenGenerator interface {
+	Generate() (rawToken string, tokenHash []byte, err error)
+	Hash(rawToken string) []byte
 }
 
 type PasswordManager interface {
 	Hash(password string) (string, error)
 	Verify(encodedHash, password string) error
-}
-
-type VerificationTokenGenerator interface {
-	Generate() (rawToken string, tokenHash []byte, err error)
 }
 
 type VerificationTokenCipher interface {
@@ -44,70 +41,157 @@ type RegistrationInput struct {
 	Password string
 }
 
-type Service struct {
-	repository                Repository
-	accessTokenIssuer         AccessTokenIssuer
-	passwordManager           PasswordManager
-	tokenGenerator            VerificationTokenGenerator
-	tokenCipher               VerificationTokenCipher
-	now                       func() time.Time
-	verificationTokenLifetime time.Duration
+type LoginInput struct {
+	Email      string
+	Password   string
+	IP         netip.Addr
+	DeviceName string
 }
 
-func NewService(repository Repository, accessTokenIssuer AccessTokenIssuer, passwordManager PasswordManager, tokenGenerator VerificationTokenGenerator, tokenCipher VerificationTokenCipher, now func() time.Time, verificationTokenLifetime time.Duration) *Service {
+type LoginResult struct {
+	AccessToken  string
+	RefreshToken string
+}
+
+type Service struct {
+	repository        Repository
+	sessionRepository SessionRepository
+
+	accessTokenStorage AccessTokenStorage
+
+	passwordManager PasswordManager
+	tokenGenerator  TokenGenerator
+	tokenCipher     VerificationTokenCipher
+	now             func() time.Time
+
+	verificationTokenLifetime time.Duration
+	accessTokenLifetime       time.Duration
+	sessionInactivityTimeout  time.Duration
+}
+
+func NewService(
+	repository Repository,
+	sessionRepository SessionRepository,
+	accessTokenStorage AccessTokenStorage,
+	passwordManager PasswordManager,
+	tokenGenerator TokenGenerator,
+	tokenCipher VerificationTokenCipher,
+	now func() time.Time,
+
+	verificationTokenLifetime time.Duration,
+	accessTokenLifetime time.Duration,
+	sessionInactivityTimeout time.Duration,
+) *Service {
 	return &Service{
-		repository:                repository,
-		accessTokenIssuer:         accessTokenIssuer,
-		passwordManager:           passwordManager,
-		tokenGenerator:            tokenGenerator,
-		tokenCipher:               tokenCipher,
-		now:                       now,
+		repository:         repository,
+		sessionRepository:  sessionRepository,
+		accessTokenStorage: accessTokenStorage,
+		passwordManager:    passwordManager,
+		tokenGenerator:     tokenGenerator,
+		tokenCipher:        tokenCipher,
+		now:                now,
+
 		verificationTokenLifetime: verificationTokenLifetime,
+		accessTokenLifetime:       accessTokenLifetime,
+		sessionInactivityTimeout:  sessionInactivityTimeout,
 	}
 }
 
-func (s *Service) Login(ctx context.Context, email string, password string) (string, error) {
-	email = normalizeEmail(email)
+// Authenticate TODO: добавить проверку на revoked session
+func (s *Service) Authenticate(ctx context.Context, rawAccessToken string) (Identity, error) {
+	identity, err := s.accessTokenStorage.Get(ctx, s.tokenGenerator.Hash(rawAccessToken))
+	if err != nil {
+		return Identity{}, fmt.Errorf("failed to authenticate: %w", err)
+	}
+
+	return identity, nil
+}
+
+// Login - Возврат ошибки ErrAccessTokenNotStored не означает, что операция не выполнена.
+// Это означает, что access token система не запомнила из-за недоступности кэша, но refresh сделать можно, он в БД
+func (s *Service) Login(ctx context.Context, input LoginInput) (LoginResult, error) {
+	email := normalizeEmail(input.Email)
 
 	if err := validateEmail(email); err != nil {
-		return "", err
+		return LoginResult{}, err
 	}
 
-	if password == "" {
-		return "", &ValidationError{
-			Code:    "password_required",
-			Field:   "password",
-			Message: "password is required",
-		}
+	if err := validatePassword(input.Password); err != nil {
+		return LoginResult{}, err
 	}
 
 	loginUser, err := s.repository.GetUserForLogin(ctx, email)
 	if err != nil {
 		if errors.Is(err, ErrUserNotFound) {
-			return "", ErrInvalidCredentials
+			return LoginResult{}, ErrInvalidCredentials
 		}
-		return "", fmt.Errorf("failed get user for login: %w", err)
+		return LoginResult{}, fmt.Errorf("failed get user for login: %w", err)
 	}
 
-	err = s.passwordManager.Verify(loginUser.PasswordHash, password)
+	err = s.passwordManager.Verify(loginUser.PasswordHash, input.Password)
 	if err != nil {
 		if !errors.Is(err, ErrInvalidCredentials) {
-			return "", fmt.Errorf("failed verify password: %w", err)
+			return LoginResult{}, fmt.Errorf("failed verify password: %w", err)
 		}
 
-		return "", err
+		return LoginResult{}, err
 	}
 
 	if loginUser.VerifiedAt == nil {
-		return "", ErrEmailNotVerified
+		return LoginResult{}, ErrEmailNotVerified
 	}
 
-	accessToken, err := s.accessTokenIssuer.Issue(loginUser.ID, s.now().UTC())
+	deviceName := strings.TrimSpace(input.DeviceName)
+	if err := validateDeviceName(deviceName); err != nil {
+		return LoginResult{}, err
+	}
+
+	now := s.now().UTC()
+
+	session := Session{
+		ID:     uuid.New(),
+		UserID: loginUser.ID,
+
+		DeviceName: deviceName,
+
+		// TODO: правильно ли БД будет интерпретировать zero value netip.Addr{}
+		CreatedIP: input.IP,
+		LastIP:    input.IP,
+
+		CreatedAt:  now,
+		LastSeenAt: now,
+
+		ExpiresAt: now.Add(s.sessionInactivityTimeout),
+	}
+
+	rawRefreshToken, refreshTokenHash, err := s.tokenGenerator.Generate()
 	if err != nil {
-		return "", fmt.Errorf("failed issue access token: %w", err)
+		return LoginResult{}, fmt.Errorf("failed generate refresh token: %w", err)
 	}
 
-	return accessToken, nil
+	refreshToken := RefreshToken{
+		ID:        uuid.New(),
+		SessionID: session.ID,
+		TokenHash: refreshTokenHash,
+		CreatedAt: now,
+	}
+
+	err = s.sessionRepository.CreateSession(ctx, session, refreshToken)
+	if err != nil {
+		return LoginResult{}, fmt.Errorf("failed create session: %w", err)
+	}
+
+	// TODO: hash must be saved in Redis preferably in a transaction
+	rawAccessToken, accessTokenHash, err := s.tokenGenerator.Generate()
+	if err != nil {
+		return LoginResult{}, fmt.Errorf("failed generate access token: %w", err)
+	}
+
+	if err = s.accessTokenStorage.Store(ctx, accessTokenHash, Identity{UserID: loginUser.ID, SessionID: session.ID}, s.accessTokenLifetime); err != nil {
+		return LoginResult{AccessToken: rawAccessToken, RefreshToken: rawRefreshToken}, errors.Join(ErrAccessTokenNotStored, err)
+	}
+
+	return LoginResult{AccessToken: rawAccessToken, RefreshToken: rawRefreshToken}, nil
 }
 
 func (s *Service) Register(ctx context.Context, input RegistrationInput) (User, error) {
@@ -159,7 +243,7 @@ func (s *Service) ConfirmEmail(ctx context.Context, rawToken string) error {
 		return ErrInvalidToken
 	}
 
-	tokenHash := token.Hash(rawToken)
+	tokenHash := s.tokenGenerator.Hash(rawToken)
 
 	return s.repository.ConfirmEmail(ctx, tokenHash, s.now().UTC())
 }
@@ -279,6 +363,14 @@ func validateEmail(email string) error {
 }
 
 func validatePassword(password string) error {
+	if password == "" {
+		return &ValidationError{
+			Code:    "password_required",
+			Field:   "password",
+			Message: "password is required",
+		}
+	}
+
 	length := utf8.RuneCountInString(password)
 
 	if length < 12 {
@@ -294,6 +386,36 @@ func validatePassword(password string) error {
 			Code:    "password_too_long",
 			Field:   "password",
 			Message: "password must contain at most 128 characters",
+		}
+	}
+
+	return nil
+}
+
+func validateDeviceName(deviceName string) error {
+	if deviceName == "" {
+		return &ValidationError{
+			Code:    "device_name_required",
+			Field:   "device_name",
+			Message: "device name is required",
+		}
+	}
+
+	length := utf8.RuneCountInString(deviceName)
+
+	if length < 3 {
+		return &ValidationError{
+			Code:    "device_name_too_short",
+			Field:   "device_name",
+			Message: "device name must contain at least 3 characters",
+		}
+	}
+
+	if length > 64 {
+		return &ValidationError{
+			Code:    "device_name_too_long",
+			Field:   "device_name",
+			Message: "device name must contain at most 64 characters",
 		}
 	}
 

@@ -16,13 +16,13 @@ type meResponse struct {
 }
 
 func (a *API) me(w http.ResponseWriter, r *http.Request) {
-	userID, ok := userIDFromContext(r.Context())
+	identity, ok := identityFromContext(r.Context())
 	if !ok {
 		a.respondError(r.Context(), w, http.StatusInternalServerError, "internal_error", "internal server error")
 		return
 	}
 
-	us, err := a.userService.GetUserByID(r.Context(), userID)
+	us, err := a.userService.GetUserByID(r.Context(), identity.UserID)
 	if err != nil {
 		if errors.Is(err, user.ErrUserNotFound) {
 			a.respondError(r.Context(), w, http.StatusUnauthorized, "authentication_error", "authentication failed")

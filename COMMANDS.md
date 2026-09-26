@@ -167,7 +167,7 @@ docker compose \
 docker compose \
   -f compose.yaml \
   -f compose.dev.yaml \
-  up -d postgres nginx
+  up -d postgres nginx redis
 ```
 
 Запускаются только `postgres` и `nginx`. API и Worker запускаются из IDE.
