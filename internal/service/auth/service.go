@@ -48,7 +48,7 @@ type LoginInput struct {
 	DeviceName string
 }
 
-type LoginResult struct {
+type TokenPair struct {
 	AccessToken  string
 	RefreshToken string
 }
@@ -58,6 +58,7 @@ type Service struct {
 	sessionRepository SessionRepository
 
 	accessTokenStorage AccessTokenStorage
+	sessionStorage     SessionStorage
 
 	passwordManager PasswordManager
 	tokenGenerator  TokenGenerator
@@ -73,6 +74,7 @@ func NewService(
 	repository Repository,
 	sessionRepository SessionRepository,
 	accessTokenStorage AccessTokenStorage,
+	sessionStorage SessionStorage,
 	passwordManager PasswordManager,
 	tokenGenerator TokenGenerator,
 	tokenCipher VerificationTokenCipher,
@@ -86,6 +88,7 @@ func NewService(
 		repository:         repository,
 		sessionRepository:  sessionRepository,
 		accessTokenStorage: accessTokenStorage,
+		sessionStorage:     sessionStorage,
 		passwordManager:    passwordManager,
 		tokenGenerator:     tokenGenerator,
 		tokenCipher:        tokenCipher,
@@ -97,53 +100,127 @@ func NewService(
 	}
 }
 
-// Authenticate TODO: добавить проверку на revoked session
+// Authenticate TODO: добавить логирование недоступности Redis
 func (s *Service) Authenticate(ctx context.Context, rawAccessToken string) (Identity, error) {
 	identity, err := s.accessTokenStorage.Get(ctx, s.tokenGenerator.Hash(rawAccessToken))
 	if err != nil {
 		return Identity{}, fmt.Errorf("failed to authenticate: %w", err)
 	}
 
+	isActive, err := s.sessionStorage.GetSession(ctx, identity.SessionID)
+	if err == nil {
+		if !isActive {
+			return Identity{}, ErrSessionInactive
+		}
+
+		return identity, nil
+	}
+
+	sessionState, err := s.sessionRepository.GetSessionState(ctx, identity.SessionID)
+	if err != nil {
+		return Identity{}, fmt.Errorf("get session state: %w", err)
+	}
+
+	now := s.now()
+
+	isActive = sessionState.RevokedAt == nil
+
+	ttl := 5 * time.Minute
+	if isActive {
+		ttl = sessionState.ExpiresAt.Sub(now)
+	}
+
+	_ = s.sessionStorage.SetSession(ctx, identity.SessionID, isActive, ttl)
+
+	if !isActive {
+		return Identity{}, ErrSessionInactive
+	}
+
 	return identity, nil
+}
+
+func (s *Service) Refresh(ctx context.Context, oldRawRefreshToken string) (TokenPair, error) {
+	oldRefreshTokenHash := s.tokenGenerator.Hash(oldRawRefreshToken)
+
+	rawRefreshToken, refreshTokenHash, err := s.tokenGenerator.Generate()
+	if err != nil {
+		return TokenPair{}, fmt.Errorf("failed generate refresh token: %w", err)
+	}
+
+	// TODO: hash must be saved in Redis preferably in a transaction
+	rawAccessToken, accessTokenHash, err := s.tokenGenerator.Generate()
+	if err != nil {
+		return TokenPair{}, fmt.Errorf("failed generate access token: %w", err)
+	}
+
+	now := s.now()
+
+	refreshToken := RefreshToken{
+		ID:        uuid.New(),
+		TokenHash: refreshTokenHash,
+		CreatedAt: now,
+	}
+
+	extendSessionInput := ExtendSessionInput{
+		OldRefreshTokenHash: oldRefreshTokenHash,
+		NewRefreshToken:     refreshToken,
+		SessionLifetime:     s.sessionInactivityTimeout,
+	}
+
+	identity, err := s.sessionRepository.ExtendSession(ctx, extendSessionInput)
+	if err != nil {
+		return TokenPair{}, fmt.Errorf("failed to extend session: %w", err)
+	}
+
+	err = s.sessionStorage.SetSession(ctx, identity.SessionID, true, s.sessionInactivityTimeout)
+	if err != nil {
+		// TODO: report recoverable cache error via observability mechanism.
+	}
+
+	if err = s.accessTokenStorage.Store(ctx, accessTokenHash, identity, s.accessTokenLifetime); err != nil {
+		return TokenPair{AccessToken: rawAccessToken, RefreshToken: rawRefreshToken}, errors.Join(ErrAccessTokenNotStored, err)
+	}
+
+	return TokenPair{AccessToken: rawAccessToken, RefreshToken: rawRefreshToken}, nil
 }
 
 // Login - Возврат ошибки ErrAccessTokenNotStored не означает, что операция не выполнена.
 // Это означает, что access token система не запомнила из-за недоступности кэша, но refresh сделать можно, он в БД
-func (s *Service) Login(ctx context.Context, input LoginInput) (LoginResult, error) {
+func (s *Service) Login(ctx context.Context, input LoginInput) (TokenPair, error) {
 	email := normalizeEmail(input.Email)
 
 	if err := validateEmail(email); err != nil {
-		return LoginResult{}, err
+		return TokenPair{}, err
 	}
 
 	if err := validatePassword(input.Password); err != nil {
-		return LoginResult{}, err
+		return TokenPair{}, err
 	}
 
 	loginUser, err := s.repository.GetUserForLogin(ctx, email)
 	if err != nil {
 		if errors.Is(err, ErrUserNotFound) {
-			return LoginResult{}, ErrInvalidCredentials
+			return TokenPair{}, ErrInvalidCredentials
 		}
-		return LoginResult{}, fmt.Errorf("failed get user for login: %w", err)
+		return TokenPair{}, fmt.Errorf("failed get user for login: %w", err)
 	}
 
 	err = s.passwordManager.Verify(loginUser.PasswordHash, input.Password)
 	if err != nil {
 		if !errors.Is(err, ErrInvalidCredentials) {
-			return LoginResult{}, fmt.Errorf("failed verify password: %w", err)
+			return TokenPair{}, fmt.Errorf("failed verify password: %w", err)
 		}
 
-		return LoginResult{}, err
+		return TokenPair{}, err
 	}
 
 	if loginUser.VerifiedAt == nil {
-		return LoginResult{}, ErrEmailNotVerified
+		return TokenPair{}, ErrEmailNotVerified
 	}
 
 	deviceName := strings.TrimSpace(input.DeviceName)
 	if err := validateDeviceName(deviceName); err != nil {
-		return LoginResult{}, err
+		return TokenPair{}, err
 	}
 
 	now := s.now().UTC()
@@ -166,32 +243,31 @@ func (s *Service) Login(ctx context.Context, input LoginInput) (LoginResult, err
 
 	rawRefreshToken, refreshTokenHash, err := s.tokenGenerator.Generate()
 	if err != nil {
-		return LoginResult{}, fmt.Errorf("failed generate refresh token: %w", err)
+		return TokenPair{}, fmt.Errorf("failed generate refresh token: %w", err)
 	}
 
 	refreshToken := RefreshToken{
 		ID:        uuid.New(),
-		SessionID: session.ID,
 		TokenHash: refreshTokenHash,
 		CreatedAt: now,
 	}
 
 	err = s.sessionRepository.CreateSession(ctx, session, refreshToken)
 	if err != nil {
-		return LoginResult{}, fmt.Errorf("failed create session: %w", err)
+		return TokenPair{}, fmt.Errorf("failed create session: %w", err)
 	}
 
 	// TODO: hash must be saved in Redis preferably in a transaction
 	rawAccessToken, accessTokenHash, err := s.tokenGenerator.Generate()
 	if err != nil {
-		return LoginResult{}, fmt.Errorf("failed generate access token: %w", err)
+		return TokenPair{}, fmt.Errorf("failed generate access token: %w", err)
 	}
 
 	if err = s.accessTokenStorage.Store(ctx, accessTokenHash, Identity{UserID: loginUser.ID, SessionID: session.ID}, s.accessTokenLifetime); err != nil {
-		return LoginResult{AccessToken: rawAccessToken, RefreshToken: rawRefreshToken}, errors.Join(ErrAccessTokenNotStored, err)
+		return TokenPair{AccessToken: rawAccessToken, RefreshToken: rawRefreshToken}, errors.Join(ErrAccessTokenNotStored, err)
 	}
 
-	return LoginResult{AccessToken: rawAccessToken, RefreshToken: rawRefreshToken}, nil
+	return TokenPair{AccessToken: rawAccessToken, RefreshToken: rawRefreshToken}, nil
 }
 
 func (s *Service) Register(ctx context.Context, input RegistrationInput) (User, error) {

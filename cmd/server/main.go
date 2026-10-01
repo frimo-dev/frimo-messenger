@@ -70,11 +70,14 @@ func main() {
 	authRepository := postgres2.NewAuthRepository(databasePool)
 	sessionRepository := postgres2.NewSessionRepository(databasePool)
 
+	sessionStorage := redis2.NewSessionStorage(cache)
+
 	// TODO: time.Hour * 24 * 30 into config
 	authService := auth.NewService(
 		authRepository,
 		sessionRepository,
 		accessTokenStorage,
+		sessionStorage,
 		passwordManager,
 		tokenGenerator,
 		verificationTokenCipher,

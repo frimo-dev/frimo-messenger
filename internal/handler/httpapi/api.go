@@ -11,11 +11,12 @@ import (
 )
 
 type AuthService interface {
-	Login(ctx context.Context, input auth.LoginInput) (auth.LoginResult, error)
+	Login(ctx context.Context, input auth.LoginInput) (auth.TokenPair, error)
 	Register(ctx context.Context, input auth.RegistrationInput) (auth.User, error)
 	ConfirmEmail(ctx context.Context, rawToken string) error
 	ResendVerification(ctx context.Context, email string) error
 	Authenticate(ctx context.Context, rawAccessToken string) (auth.Identity, error)
+	Refresh(ctx context.Context, oldRawRefreshToken string) (auth.TokenPair, error)
 }
 
 type UserService interface {
@@ -60,6 +61,7 @@ func (a *API) registerRoutes() {
 	a.mux.HandleFunc("GET /auth/verify-email", a.verifyEmail)
 	a.mux.HandleFunc("POST /auth/resend", a.resendVerificationToken)
 	a.mux.HandleFunc("POST /auth/login", a.login)
+	a.mux.HandleFunc("GET /auth/refresh", a.refresh)
 
 	a.mux.Handle("GET /me", AuthenticationMiddleware(a.logger, a.authService, http.HandlerFunc(a.me)))
 }

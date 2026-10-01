@@ -33,7 +33,6 @@ func (a *API) registerUser(w http.ResponseWriter, r *http.Request) {
 		Email:    request.Email,
 		Password: request.Password,
 	})
-
 	if err != nil {
 		var validationErr *auth.ValidationError
 

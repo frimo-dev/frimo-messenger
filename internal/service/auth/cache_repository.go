@@ -15,3 +15,8 @@ type AccessTokenStorage interface {
 	Store(ctx context.Context, tokenHash []byte, identity Identity, ttl time.Duration) error
 	Get(ctx context.Context, tokenHash []byte) (Identity, error)
 }
+
+type SessionStorage interface {
+	SetSession(ctx context.Context, sessionID uuid.UUID, isActive bool, ttl time.Duration) error
+	GetSession(ctx context.Context, sessionID uuid.UUID) (bool, error)
+}

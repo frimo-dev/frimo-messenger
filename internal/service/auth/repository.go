@@ -63,11 +63,23 @@ type Session struct {
 
 type RefreshToken struct {
 	ID        uuid.UUID
-	SessionID uuid.UUID
 	TokenHash []byte
 	CreatedAt time.Time
 }
 
+type SessionState struct {
+	RevokedAt *time.Time
+	ExpiresAt time.Time
+}
+
+type ExtendSessionInput struct {
+	OldRefreshTokenHash []byte
+	NewRefreshToken     RefreshToken
+	SessionLifetime     time.Duration
+}
+
 type SessionRepository interface {
 	CreateSession(ctx context.Context, session Session, refreshToken RefreshToken) error
+	GetSessionState(ctx context.Context, sessionID uuid.UUID) (SessionState, error)
+	ExtendSession(ctx context.Context, input ExtendSessionInput) (Identity, error)
 }

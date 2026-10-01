@@ -30,8 +30,9 @@ func TestGeneratorCreatesDifferentTokens(t *testing.T) {
 }
 
 func TestHashIsDeterministic(t *testing.T) {
-	first := token.Hash("example-token")
-	second := token.Hash("example-token")
+	generator := token.NewGenerator()
+	first := generator.Hash("example-token")
+	second := generator.Hash("example-token")
 
 	if !bytes.Equal(first, second) {
 		t.Fatal("same token must produce same hash")

@@ -19,6 +19,13 @@ var (
 
 	ErrAccessTokenNotStored = errors.New("access token not stored")
 	ErrAccessTokenInvalid   = errors.New("invalid access token")
+
+	ErrSessionNotFound  = errors.New("session not found")
+	ErrSessionCacheMiss = errors.New("session cache miss")
+	ErrSessionInactive  = errors.New("session inactive")
+
+	ErrRefreshTokenNotFound = errors.New("refresh token not found")
+	ErrRefreshTokenUsed     = errors.New("refresh token already used")
 )
 
 type ValidationError struct {
