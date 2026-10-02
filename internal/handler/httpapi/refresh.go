@@ -3,13 +3,33 @@ package httpapi
 import (
 	"errors"
 	"net/http"
+	"uuid"
 
 	"github.com/frimo-dev/frimo-messenger/internal/service/auth"
 	"go.uber.org/zap"
 )
 
 type refreshRequest struct {
-	RefreshToken string `json:"refresh_token"`
+	OperationID  uuid.UUID `json:"operation_id"`
+	RefreshToken string    `json:"refresh_token"`
+}
+
+func (r refreshRequest) Validate() error {
+	switch {
+	case r.OperationID == uuid.Nil():
+		return ValidationError{
+			Field: "operation_id",
+			Code:  "required",
+		}
+
+	case r.RefreshToken == "":
+		return ValidationError{
+			Field: "refresh_token",
+			Code:  "required",
+		}
+	}
+
+	return nil
 }
 
 type refreshResponse struct {
@@ -20,12 +40,16 @@ type refreshResponse struct {
 func (a *API) refresh(w http.ResponseWriter, r *http.Request) {
 	var request refreshRequest
 
-	if err := decodeJSON(w, r, &request); err != nil {
-		a.respondError(r.Context(), w, http.StatusBadRequest, "invalid_request", "invalid request body")
+	if err := decodeJSON(r, &request); err != nil {
+		a.respondRequestError(r.Context(), w, err)
 		return
 	}
 
-	tokenPair, err := a.authService.Refresh(r.Context(), request.RefreshToken)
+	tokenPair, err := a.authService.Refresh(r.Context(),
+		auth.RefreshInput{
+			OperationID:     request.OperationID,
+			RawRefreshToken: request.RefreshToken,
+		})
 	if err != nil {
 		switch {
 		case errors.Is(err, auth.ErrAccessTokenNotStored):
@@ -36,7 +60,7 @@ func (a *API) refresh(w http.ResponseWriter, r *http.Request) {
 			)
 
 		case errors.Is(err, auth.ErrRefreshTokenNotFound),
-			errors.Is(err, auth.ErrRefreshTokenUsed),
+			errors.Is(err, auth.ErrRefreshTokenReuse),
 			errors.Is(err, auth.ErrSessionInactive):
 
 			a.respondError(

@@ -73,6 +73,7 @@ type SessionState struct {
 }
 
 type ExtendSessionInput struct {
+	OperationID         uuid.UUID
 	OldRefreshTokenHash []byte
 	NewRefreshToken     RefreshToken
 	SessionLifetime     time.Duration

@@ -1,7 +1,6 @@
 package httpapi
 
 import (
-	"encoding/json/v2"
 	"errors"
 	"net/http"
 
@@ -16,6 +15,19 @@ type registerRequest struct {
 	Password string `json:"password"`
 }
 
+func (r registerRequest) Validate() error {
+	switch {
+	case r.Email == "":
+		return errors.New("operation_id is required")
+
+	case r.Password == "":
+		return errors.New("refresh_token is required")
+
+	default:
+		return nil
+	}
+}
+
 type registerResponse struct {
 	ID    string `json:"id"`
 	Email string `json:"email"`
@@ -24,7 +36,7 @@ type registerResponse struct {
 func (a *API) registerUser(w http.ResponseWriter, r *http.Request) {
 	var request registerRequest
 
-	if err := decodeJSON(w, r, &request); err != nil {
+	if err := decodeJSON(r, &request); err != nil {
 		a.respondError(r.Context(), w, http.StatusBadRequest, "invalid_request", "invalid request body")
 		return
 	}
@@ -84,10 +96,4 @@ func (a *API) registerUser(w http.ResponseWriter, r *http.Request) {
 		ID:    createdUser.ID.String(),
 		Email: createdUser.Email,
 	})
-}
-
-func decodeJSON(w http.ResponseWriter, r *http.Request, destination any) error {
-	r.Body = http.MaxBytesReader(w, r.Body, maxRegisterBodySize)
-
-	return json.UnmarshalRead(r.Body, destination, json.RejectUnknownMembers(true))
 }

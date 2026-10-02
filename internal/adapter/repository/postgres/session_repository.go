@@ -122,7 +122,7 @@ func (r *SessionRepository) ExtendSession(ctx context.Context, input auth.Extend
 	}()
 
 	const querySelectToken = `
-		SELECT id, session_id, used_at
+		SELECT id, session_id, used_at, request_id
 		FROM refresh_tokens
 		WHERE token_hash = $1
 		FOR UPDATE
@@ -131,18 +131,15 @@ func (r *SessionRepository) ExtendSession(ctx context.Context, input auth.Extend
 	var tokenID uuid.UUID
 	var sessionID uuid.UUID
 	var usedAt *time.Time
+	var requestID *uuid.UUID
 
-	err = tx.QueryRow(ctx, querySelectToken, input.OldRefreshTokenHash).Scan(&tokenID, &sessionID, &usedAt)
+	err = tx.QueryRow(ctx, querySelectToken, input.OldRefreshTokenHash).Scan(&tokenID, &sessionID, &usedAt, &requestID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return auth.Identity{}, auth.ErrRefreshTokenNotFound
 		}
 
 		return auth.Identity{}, fmt.Errorf("failed to select refresh token: %w", err)
-	}
-
-	if usedAt != nil {
-		return auth.Identity{}, auth.ErrRefreshTokenUsed
 	}
 
 	const querySelectSession = `
@@ -165,17 +162,41 @@ func (r *SessionRepository) ExtendSession(ctx context.Context, input auth.Extend
 		return auth.Identity{}, fmt.Errorf("failed to select session: %w", err)
 	}
 
+	if usedAt != nil {
+		if requestID != nil && *requestID == input.OperationID {
+			return auth.Identity{UserID: userID, SessionID: sessionID}, auth.ErrRefreshRetry
+		}
+
+		const queryRevokeSession = `
+			UPDATE auth_sessions
+			SET revoked_at = $1
+			WHERE id = $2
+		`
+
+		_, err = tx.Exec(ctx, queryRevokeSession, now, sessionID)
+		if err != nil {
+			return auth.Identity{}, fmt.Errorf("failed to revoke session: %w", err)
+		}
+
+		err = tx.Commit(ctx)
+		if err != nil {
+			return auth.Identity{}, fmt.Errorf("failed to commit transaction: %w", err)
+		}
+
+		return auth.Identity{UserID: userID, SessionID: sessionID}, auth.ErrRefreshTokenReuse
+	}
+
 	if revokedAt != nil || !expiresAt.After(now) {
 		return auth.Identity{}, auth.ErrSessionInactive
 	}
 
 	const queryUpdateRefreshToken = `
 		UPDATE refresh_tokens
-		SET used_at = $1
-		WHERE id = $2
+		SET used_at = $1, request_id = $2
+		WHERE id = $3
 	`
 
-	_, err = tx.Exec(ctx, queryUpdateRefreshToken, now, tokenID)
+	_, err = tx.Exec(ctx, queryUpdateRefreshToken, now, input.OperationID, tokenID)
 	if err != nil {
 		return auth.Identity{}, fmt.Errorf("failed to update refresh token: %w", err)
 	}
@@ -208,7 +229,7 @@ func (r *SessionRepository) ExtendSession(ctx context.Context, input auth.Extend
 		WHERE id = $2
 	`
 
-	_, err = tx.Exec(ctx, queryUpdateSession, expiresAt.Add(input.SessionLifetime), sessionID)
+	_, err = tx.Exec(ctx, queryUpdateSession, now.Add(input.SessionLifetime), sessionID)
 	if err != nil {
 		return auth.Identity{}, fmt.Errorf("failed to update session: %w", err)
 	}

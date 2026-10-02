@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 
@@ -16,6 +17,17 @@ type errorResponse struct {
 type errorBody struct {
 	Code    string `json:"code"`
 	Message string `json:"message"`
+}
+
+func (a *API) respondRequestError(ctx context.Context, w http.ResponseWriter, err error) {
+	var validationErr *ValidationError
+
+	if errors.As(err, &validationErr) {
+		a.respondError(ctx, w, http.StatusBadRequest, "validation_error", "request validation failed")
+		return
+	}
+
+	a.respondError(ctx, w, http.StatusBadRequest, "invalid_request", "invalid request body")
 }
 
 func (a *API) respondError(ctx context.Context, w http.ResponseWriter, status int, code string, message string) {

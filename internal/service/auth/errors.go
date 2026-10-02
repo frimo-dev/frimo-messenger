@@ -25,7 +25,8 @@ var (
 	ErrSessionInactive  = errors.New("session inactive")
 
 	ErrRefreshTokenNotFound = errors.New("refresh token not found")
-	ErrRefreshTokenUsed     = errors.New("refresh token already used")
+	ErrRefreshTokenReuse    = errors.New("refresh token already used")
+	ErrRefreshRetry         = errors.New("refresh retry")
 )
 
 type ValidationError struct {

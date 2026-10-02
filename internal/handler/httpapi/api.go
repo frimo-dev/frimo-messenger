@@ -16,7 +16,7 @@ type AuthService interface {
 	ConfirmEmail(ctx context.Context, rawToken string) error
 	ResendVerification(ctx context.Context, email string) error
 	Authenticate(ctx context.Context, rawAccessToken string) (auth.Identity, error)
-	Refresh(ctx context.Context, oldRawRefreshToken string) (auth.TokenPair, error)
+	Refresh(ctx context.Context, input auth.RefreshInput) (auth.TokenPair, error)
 }
 
 type UserService interface {

@@ -48,6 +48,11 @@ type LoginInput struct {
 	DeviceName string
 }
 
+type RefreshInput struct {
+	OperationID     uuid.UUID
+	RawRefreshToken string
+}
+
 type TokenPair struct {
 	AccessToken  string
 	RefreshToken string
@@ -139,8 +144,8 @@ func (s *Service) Authenticate(ctx context.Context, rawAccessToken string) (Iden
 	return identity, nil
 }
 
-func (s *Service) Refresh(ctx context.Context, oldRawRefreshToken string) (TokenPair, error) {
-	oldRefreshTokenHash := s.tokenGenerator.Hash(oldRawRefreshToken)
+func (s *Service) Refresh(ctx context.Context, input RefreshInput) (TokenPair, error) {
+	oldRefreshTokenHash := s.tokenGenerator.Hash(input.RawRefreshToken)
 
 	rawRefreshToken, refreshTokenHash, err := s.tokenGenerator.Generate()
 	if err != nil {
@@ -162,6 +167,7 @@ func (s *Service) Refresh(ctx context.Context, oldRawRefreshToken string) (Token
 	}
 
 	extendSessionInput := ExtendSessionInput{
+		OperationID:         input.OperationID,
 		OldRefreshTokenHash: oldRefreshTokenHash,
 		NewRefreshToken:     refreshToken,
 		SessionLifetime:     s.sessionInactivityTimeout,
