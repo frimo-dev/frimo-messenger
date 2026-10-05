@@ -52,14 +52,7 @@ func (a *API) refresh(w http.ResponseWriter, r *http.Request) {
 		})
 	if err != nil {
 		switch {
-		case errors.Is(err, auth.ErrAccessTokenNotStored):
-			a.logger.Error(
-				"failed to store access token",
-				zap.Error(err),
-				zap.String("request_id", requestIDFromContext(r.Context())),
-			)
-
-		case errors.Is(err, auth.ErrRefreshTokenNotFound),
+		case errors.Is(err, auth.ErrRefreshRetryExpired),
 			errors.Is(err, auth.ErrRefreshTokenReuse),
 			errors.Is(err, auth.ErrSessionInactive):
 
@@ -71,6 +64,25 @@ func (a *API) refresh(w http.ResponseWriter, r *http.Request) {
 				"authentication failed",
 			)
 			return
+
+		case errors.Is(err, auth.ErrAccessTokenNotStored):
+			a.logger.Error(
+				"failed to store access token",
+				zap.Error(err),
+				zap.String("request_id", requestIDFromContext(r.Context())),
+			)
+		case errors.Is(err, auth.ErrRefreshResultNotStored):
+			a.logger.Error(
+				"failed to store refresh result",
+				zap.Error(err),
+				zap.String("request_id", requestIDFromContext(r.Context())),
+			)
+		case errors.Is(err, auth.ErrSessionStatusNotStored):
+			a.logger.Error(
+				"failed to store session status",
+				zap.Error(err),
+				zap.String("request_id", requestIDFromContext(r.Context())),
+			)
 
 		default:
 			a.logger.Error(

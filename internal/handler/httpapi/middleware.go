@@ -115,7 +115,7 @@ func AuthenticationMiddleware(logger *zap.Logger, authenticator AccessTokenAuthe
 
 		identity, err := authenticator.Authenticate(r.Context(), rawAccessToken)
 		if err != nil {
-			if errors.Is(err, auth.ErrAccessTokenInvalid) {
+			if errors.Is(err, auth.ErrAccessTokenInvalid) || errors.Is(err, auth.ErrSessionInactive) {
 				err = writeError(w, http.StatusUnauthorized, "authentication_error", "authentication failed")
 				if err != nil {
 					logger.Error(

@@ -56,8 +56,6 @@ func main() {
 		}
 	}()
 
-	accessTokenStorage := redis2.NewAccessTokenStorage(cache)
-
 	verificationTokenCipher, err := secret.NewCipher(cfg.Auth.Verification.EncryptionKey)
 	if err != nil {
 		logger.Fatal("failed creation verification token cipher", zap.Error(err))
@@ -71,6 +69,8 @@ func main() {
 	sessionRepository := postgres2.NewSessionRepository(databasePool)
 
 	sessionStorage := redis2.NewSessionStorage(cache)
+	accessTokenStorage := redis2.NewAccessTokenStorage(cache)
+	refreshResultStorage := redis2.NewRefreshResultStorage(cache)
 
 	// TODO: time.Hour * 24 * 30 into config
 	authService := auth.NewService(
@@ -78,6 +78,7 @@ func main() {
 		sessionRepository,
 		accessTokenStorage,
 		sessionStorage,
+		refreshResultStorage,
 		passwordManager,
 		tokenGenerator,
 		verificationTokenCipher,
@@ -85,6 +86,7 @@ func main() {
 		cfg.VerificationTokenLifetime,
 		cfg.Auth.Login.AccessTokenTTL,
 		cfg.Auth.Login.RefreshTokenTTL,
+		cfg.Auth.Refresh.RefreshRetryTTL,
 	)
 
 	userRepository := postgres2.NewUserRepository(databasePool)

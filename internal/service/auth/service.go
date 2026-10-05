@@ -62,8 +62,9 @@ type Service struct {
 	repository        Repository
 	sessionRepository SessionRepository
 
-	accessTokenStorage AccessTokenStorage
-	sessionStorage     SessionStorage
+	accessTokenStorage   AccessTokenStorage
+	sessionStorage       SessionStorage
+	refreshResultStorage RefreshResultStorage
 
 	passwordManager PasswordManager
 	tokenGenerator  TokenGenerator
@@ -73,6 +74,7 @@ type Service struct {
 	verificationTokenLifetime time.Duration
 	accessTokenLifetime       time.Duration
 	sessionInactivityTimeout  time.Duration
+	refreshRetryTTL           time.Duration
 }
 
 func NewService(
@@ -80,6 +82,7 @@ func NewService(
 	sessionRepository SessionRepository,
 	accessTokenStorage AccessTokenStorage,
 	sessionStorage SessionStorage,
+	refreshResultStorage RefreshResultStorage,
 	passwordManager PasswordManager,
 	tokenGenerator TokenGenerator,
 	tokenCipher VerificationTokenCipher,
@@ -88,20 +91,23 @@ func NewService(
 	verificationTokenLifetime time.Duration,
 	accessTokenLifetime time.Duration,
 	sessionInactivityTimeout time.Duration,
+	refreshRetryTTL time.Duration,
 ) *Service {
 	return &Service{
-		repository:         repository,
-		sessionRepository:  sessionRepository,
-		accessTokenStorage: accessTokenStorage,
-		sessionStorage:     sessionStorage,
-		passwordManager:    passwordManager,
-		tokenGenerator:     tokenGenerator,
-		tokenCipher:        tokenCipher,
-		now:                now,
+		repository:           repository,
+		sessionRepository:    sessionRepository,
+		accessTokenStorage:   accessTokenStorage,
+		sessionStorage:       sessionStorage,
+		refreshResultStorage: refreshResultStorage,
+		passwordManager:      passwordManager,
+		tokenGenerator:       tokenGenerator,
+		tokenCipher:          tokenCipher,
+		now:                  now,
 
 		verificationTokenLifetime: verificationTokenLifetime,
 		accessTokenLifetime:       accessTokenLifetime,
 		sessionInactivityTimeout:  sessionInactivityTimeout,
+		refreshRetryTTL:           refreshRetryTTL,
 	}
 }
 
@@ -123,7 +129,7 @@ func (s *Service) Authenticate(ctx context.Context, rawAccessToken string) (Iden
 
 	sessionState, err := s.sessionRepository.GetSessionState(ctx, identity.SessionID)
 	if err != nil {
-		return Identity{}, fmt.Errorf("get session state: %w", err)
+		return Identity{}, fmt.Errorf("failed to get session state: %w", err)
 	}
 
 	now := s.now()
@@ -152,7 +158,6 @@ func (s *Service) Refresh(ctx context.Context, input RefreshInput) (TokenPair, e
 		return TokenPair{}, fmt.Errorf("failed generate refresh token: %w", err)
 	}
 
-	// TODO: hash must be saved in Redis preferably in a transaction
 	rawAccessToken, accessTokenHash, err := s.tokenGenerator.Generate()
 	if err != nil {
 		return TokenPair{}, fmt.Errorf("failed generate access token: %w", err)
@@ -175,19 +180,54 @@ func (s *Service) Refresh(ctx context.Context, input RefreshInput) (TokenPair, e
 
 	identity, err := s.sessionRepository.ExtendSession(ctx, extendSessionInput)
 	if err != nil {
-		return TokenPair{}, fmt.Errorf("failed to extend session: %w", err)
+		switch {
+		case errors.Is(err, ErrRefreshRetry):
+			tokenPair, errStorage := s.refreshResultStorage.Get(ctx, oldRefreshTokenHash)
+			if errStorage != nil {
+				if errors.Is(errStorage, ErrRefreshResultNotFound) {
+					return TokenPair{}, ErrRefreshRetryExpired
+				}
+
+				// TODO: report recoverable cache error via observability mechanism.
+				return TokenPair{}, fmt.Errorf("failed to get refresh result: %w", errStorage)
+			}
+
+			if errStorage = s.accessTokenStorage.Store(ctx, s.tokenGenerator.Hash(tokenPair.AccessToken), identity, s.accessTokenLifetime); errStorage != nil {
+				return tokenPair, errors.Join(ErrAccessTokenNotStored, errStorage)
+			}
+
+			return tokenPair, nil
+		case errors.Is(err, ErrRefreshTokenReuse):
+			errStorage := s.sessionStorage.SetSession(ctx, identity.SessionID, false, s.sessionInactivityTimeout)
+			if errStorage != nil {
+				// TODO: report recoverable cache error via observability mechanism.
+			}
+
+			return TokenPair{}, fmt.Errorf("failed to extend session: %w", ErrRefreshTokenReuse)
+		default:
+			return TokenPair{}, fmt.Errorf("failed to extend session: %w", err)
+		}
+	}
+
+	var resultErr error
+
+	if err := s.refreshResultStorage.Store(ctx, oldRefreshTokenHash, TokenPair{AccessToken: rawAccessToken, RefreshToken: rawRefreshToken}, s.refreshRetryTTL); err != nil {
+		// TODO: report recoverable cache error via observability mechanism.
+		resultErr = errors.Join(ErrRefreshResultNotStored, err, resultErr)
+	}
+
+	if err := s.accessTokenStorage.Store(ctx, accessTokenHash, identity, s.accessTokenLifetime); err != nil {
+		// TODO: report recoverable cache error via observability mechanism.
+		resultErr = errors.Join(ErrAccessTokenNotStored, err, resultErr)
 	}
 
 	err = s.sessionStorage.SetSession(ctx, identity.SessionID, true, s.sessionInactivityTimeout)
 	if err != nil {
 		// TODO: report recoverable cache error via observability mechanism.
+		resultErr = errors.Join(ErrSessionStatusNotStored, err, resultErr)
 	}
 
-	if err = s.accessTokenStorage.Store(ctx, accessTokenHash, identity, s.accessTokenLifetime); err != nil {
-		return TokenPair{AccessToken: rawAccessToken, RefreshToken: rawRefreshToken}, errors.Join(ErrAccessTokenNotStored, err)
-	}
-
-	return TokenPair{AccessToken: rawAccessToken, RefreshToken: rawRefreshToken}, nil
+	return TokenPair{AccessToken: rawAccessToken, RefreshToken: rawRefreshToken}, resultErr
 }
 
 // Login - Возврат ошибки ErrAccessTokenNotStored не означает, что операция не выполнена.

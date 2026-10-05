@@ -35,6 +35,7 @@ type RedisConfig struct {
 type AuthConfig struct {
 	Login        LoginConfig
 	Verification VerificationConfig
+	Refresh      RefreshConfig
 }
 
 type LoginConfig struct {
@@ -45,6 +46,10 @@ type LoginConfig struct {
 
 type VerificationConfig struct {
 	EncryptionKey []byte
+}
+
+type RefreshConfig struct {
+	RefreshRetryTTL time.Duration
 }
 
 type HTTPConfig struct {
@@ -102,6 +107,9 @@ func Load() (Config, error) {
 			},
 			Verification: VerificationConfig{
 				EncryptionKey: encryptionKey,
+			},
+			Refresh: RefreshConfig{
+				RefreshRetryTTL: time.Minute,
 			},
 		},
 		GracefulShutdown: GracefulShutdownConfig{

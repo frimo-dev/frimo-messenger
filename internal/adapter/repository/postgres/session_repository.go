@@ -109,6 +109,11 @@ func (r *SessionRepository) GetSessionState(ctx context.Context, sessionID uuid.
 	return sessionState, nil
 }
 
+// ExtendSession Если было повторение операции обновления токенов(то есть request_id такой же), то
+// возвращается непустой Identity для получения временно сохраненных токенов в кэше и ErrRefreshRetry.
+// Если это было другая операция для старого refresh токена, то считаем это кражей токена и
+// отзываем всю сессию. В таком случае ExtendSession возвращает ErrRefreshTokenReuse и непустой
+// Identity для возврата
 func (r *SessionRepository) ExtendSession(ctx context.Context, input auth.ExtendSessionInput) (auth.Identity, error) {
 	now := input.NewRefreshToken.CreatedAt.UTC()
 
@@ -162,6 +167,10 @@ func (r *SessionRepository) ExtendSession(ctx context.Context, input auth.Extend
 		return auth.Identity{}, fmt.Errorf("failed to select session: %w", err)
 	}
 
+	if revokedAt != nil || !expiresAt.After(now) {
+		return auth.Identity{}, auth.ErrSessionInactive
+	}
+
 	if usedAt != nil {
 		if requestID != nil && *requestID == input.OperationID {
 			return auth.Identity{UserID: userID, SessionID: sessionID}, auth.ErrRefreshRetry
@@ -184,10 +193,6 @@ func (r *SessionRepository) ExtendSession(ctx context.Context, input auth.Extend
 		}
 
 		return auth.Identity{UserID: userID, SessionID: sessionID}, auth.ErrRefreshTokenReuse
-	}
-
-	if revokedAt != nil || !expiresAt.After(now) {
-		return auth.Identity{}, auth.ErrSessionInactive
 	}
 
 	const queryUpdateRefreshToken = `
