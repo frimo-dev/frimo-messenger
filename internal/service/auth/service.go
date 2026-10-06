@@ -115,7 +115,6 @@ func NewService(
 	}
 }
 
-// Authenticate TODO: добавить логирование недоступности Redis
 func (s *Service) Authenticate(ctx context.Context, rawAccessToken string) (Identity, error) {
 	identity, err := s.accessTokenStorage.Get(ctx, s.tokenGenerator.Hash(rawAccessToken))
 	if err != nil {
@@ -129,6 +128,10 @@ func (s *Service) Authenticate(ctx context.Context, rawAccessToken string) (Iden
 		}
 
 		return identity, nil
+	}
+
+	if !errors.Is(err, ErrSessionCacheMiss) {
+		s.observer.SessionCacheReadFailed(ctx, err)
 	}
 
 	sessionState, err := s.sessionRepository.GetSessionState(ctx, identity.SessionID)
@@ -145,7 +148,10 @@ func (s *Service) Authenticate(ctx context.Context, rawAccessToken string) (Iden
 		ttl = sessionState.ExpiresAt.Sub(now)
 	}
 
-	_ = s.sessionStorage.SetSession(ctx, identity.SessionID, isActive, ttl)
+	err = s.sessionStorage.SetSession(ctx, identity.SessionID, isActive, ttl)
+	if err != nil {
+		s.observer.SessionCacheUpdateFailed(ctx, err)
+	}
 
 	if !isActive {
 		return Identity{}, ErrSessionInactive
@@ -227,8 +233,6 @@ func (s *Service) Refresh(ctx context.Context, input RefreshInput) (TokenPair, e
 	return TokenPair{AccessToken: rawAccessToken, RefreshToken: rawRefreshToken}, nil
 }
 
-// Login - Возврат ошибки ErrAccessTokenNotStored не означает, что операция не выполнена.
-// Это означает, что access token система не запомнила из-за недоступности кэша, но refresh сделать можно, он в БД
 func (s *Service) Login(ctx context.Context, input LoginInput) (TokenPair, error) {
 	email := normalizeEmail(input.Email)
 
@@ -306,8 +310,9 @@ func (s *Service) Login(ctx context.Context, input LoginInput) (TokenPair, error
 		return TokenPair{}, fmt.Errorf("failed generate access token: %w", err)
 	}
 
-	if err = s.accessTokenStorage.Store(ctx, accessTokenHash, Identity{UserID: loginUser.ID, SessionID: session.ID}, s.accessTokenLifetime); err != nil {
-		return TokenPair{AccessToken: rawAccessToken, RefreshToken: rawRefreshToken}, errors.Join(ErrAccessTokenNotStored, err)
+	identity := Identity{UserID: loginUser.ID, SessionID: session.ID}
+	if err := s.accessTokenStorage.Store(ctx, accessTokenHash, identity, s.accessTokenLifetime); err != nil {
+		s.observer.AccessTokenStoreFailed(ctx, err)
 	}
 
 	return TokenPair{AccessToken: rawAccessToken, RefreshToken: rawRefreshToken}, nil

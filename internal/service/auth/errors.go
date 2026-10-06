@@ -17,7 +17,6 @@ var (
 	ErrUsedToken    = errors.New("verification token already used")
 	ErrRevokedToken = errors.New("verification token is revoked")
 
-	ErrAccessTokenNotStored = errors.New("access token not stored")
 	ErrAccessTokenInvalid   = errors.New("invalid access token")
 
 	ErrSessionNotFound  = errors.New("session not found")

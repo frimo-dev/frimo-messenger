@@ -43,29 +43,25 @@ func (a *API) login(w http.ResponseWriter, r *http.Request) {
 		IP:         ip,
 	})
 	if err != nil {
-		if !errors.Is(err, auth.ErrAccessTokenNotStored) {
-			var validationErr *auth.ValidationError
+		var validationErr *auth.ValidationError
 
-			switch {
-			case errors.As(err, &validationErr):
-				a.respondError(r.Context(), w, http.StatusBadRequest, validationErr.Code, validationErr.Message)
-			case errors.Is(err, auth.ErrInvalidCredentials):
-				a.respondError(r.Context(), w, http.StatusUnauthorized, "invalid_credentials", "invalid credentials")
-			case errors.Is(err, auth.ErrEmailNotVerified):
-				a.respondError(r.Context(), w, http.StatusForbidden, "email_not_verified", "email not verified")
-			default:
-				a.logger.Error(
-					"failed to login user",
-					zap.Error(err),
-					zap.String("request_id", execution.IDFromContext(r.Context())),
-				)
-				a.respondError(r.Context(), w, http.StatusInternalServerError, "internal_error", "internal server error")
-			}
-
-			return
+		switch {
+		case errors.As(err, &validationErr):
+			a.respondError(r.Context(), w, http.StatusBadRequest, validationErr.Code, validationErr.Message)
+		case errors.Is(err, auth.ErrInvalidCredentials):
+			a.respondError(r.Context(), w, http.StatusUnauthorized, "invalid_credentials", "invalid credentials")
+		case errors.Is(err, auth.ErrEmailNotVerified):
+			a.respondError(r.Context(), w, http.StatusForbidden, "email_not_verified", "email not verified")
+		default:
+			a.logger.Error(
+				"failed to login user",
+				zap.Error(err),
+				zap.String("request_id", execution.IDFromContext(r.Context())),
+			)
+			a.respondError(r.Context(), w, http.StatusInternalServerError, "internal_error", "internal server error")
 		}
 
-		a.logger.Error("failed to store access token", zap.Error(err), zap.String("request_id", execution.IDFromContext(r.Context())))
+		return
 	}
 
 	a.logger.Info("user session created", zap.String("request_id", execution.IDFromContext(r.Context())))

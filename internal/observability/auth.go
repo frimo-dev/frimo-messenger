@@ -30,3 +30,7 @@ func (o *AuthObserver) AccessTokenStoreFailed(ctx context.Context, err error) {
 func (o *AuthObserver) SessionCacheUpdateFailed(ctx context.Context, err error) {
 	o.logger.Error("failed to update session cache", zap.Error(err))
 }
+
+func (o *AuthObserver) SessionCacheReadFailed(ctx context.Context, err error) {
+	o.logger.Error("failed to read session cache", zap.Error(err))
+}

@@ -66,12 +66,6 @@ func (a *API) refresh(w http.ResponseWriter, r *http.Request) {
 			)
 			return
 
-		case errors.Is(err, auth.ErrAccessTokenNotStored):
-			a.logger.Error(
-				"failed to store access token",
-				zap.Error(err),
-				zap.String("request_id", execution.IDFromContext(r.Context())),
-			)
 		default:
 			a.logger.Error(
 				"failed to refresh session",
