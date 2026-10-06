@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 
+	"github.com/frimo-dev/frimo-messenger/internal/execution"
 	"github.com/frimo-dev/frimo-messenger/internal/service/auth"
 	"go.uber.org/zap"
 )
@@ -71,7 +72,7 @@ func (a *API) registerUser(w http.ResponseWriter, r *http.Request) {
 			a.logger.Error(
 				"failed to register user",
 				zap.Error(err),
-				zap.String("request_id", requestIDFromContext(r.Context())),
+				zap.String("request_id", execution.IDFromContext(r.Context())),
 			)
 
 			a.respondError(
@@ -88,7 +89,7 @@ func (a *API) registerUser(w http.ResponseWriter, r *http.Request) {
 
 	a.logger.Info(
 		"user registered successfully",
-		zap.String(string(requestIDKey), requestIDFromContext(r.Context())),
+		zap.String("request_id", execution.IDFromContext(r.Context())),
 		zap.String("user_id", createdUser.ID.String()),
 	)
 

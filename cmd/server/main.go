@@ -14,6 +14,7 @@ import (
 	redis2 "github.com/frimo-dev/frimo-messenger/internal/adapter/repository/redis"
 	"github.com/frimo-dev/frimo-messenger/internal/config"
 	"github.com/frimo-dev/frimo-messenger/internal/handler/httpapi"
+	"github.com/frimo-dev/frimo-messenger/internal/observability"
 	"github.com/frimo-dev/frimo-messenger/internal/security/password"
 	"github.com/frimo-dev/frimo-messenger/internal/security/secret"
 	"github.com/frimo-dev/frimo-messenger/internal/security/token"
@@ -72,6 +73,8 @@ func main() {
 	accessTokenStorage := redis2.NewAccessTokenStorage(cache)
 	refreshResultStorage := redis2.NewRefreshResultStorage(cache)
 
+	authObserver := observability.NewAuthObserver(logger)
+
 	// TODO: time.Hour * 24 * 30 into config
 	authService := auth.NewService(
 		authRepository,
@@ -79,6 +82,7 @@ func main() {
 		accessTokenStorage,
 		sessionStorage,
 		refreshResultStorage,
+		authObserver,
 		passwordManager,
 		tokenGenerator,
 		verificationTokenCipher,

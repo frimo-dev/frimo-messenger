@@ -66,6 +66,8 @@ type Service struct {
 	sessionStorage       SessionStorage
 	refreshResultStorage RefreshResultStorage
 
+	observer Observer
+
 	passwordManager PasswordManager
 	tokenGenerator  TokenGenerator
 	tokenCipher     VerificationTokenCipher
@@ -83,6 +85,7 @@ func NewService(
 	accessTokenStorage AccessTokenStorage,
 	sessionStorage SessionStorage,
 	refreshResultStorage RefreshResultStorage,
+	observer Observer,
 	passwordManager PasswordManager,
 	tokenGenerator TokenGenerator,
 	tokenCipher VerificationTokenCipher,
@@ -99,6 +102,7 @@ func NewService(
 		accessTokenStorage:   accessTokenStorage,
 		sessionStorage:       sessionStorage,
 		refreshResultStorage: refreshResultStorage,
+		observer:             observer,
 		passwordManager:      passwordManager,
 		tokenGenerator:       tokenGenerator,
 		tokenCipher:          tokenCipher,
@@ -185,22 +189,21 @@ func (s *Service) Refresh(ctx context.Context, input RefreshInput) (TokenPair, e
 			tokenPair, errStorage := s.refreshResultStorage.Get(ctx, oldRefreshTokenHash)
 			if errStorage != nil {
 				if errors.Is(errStorage, ErrRefreshResultNotFound) {
-					return TokenPair{}, ErrRefreshRetryExpired
+					return TokenPair{}, ErrRefreshRetryUnavailable
 				}
 
-				// TODO: report recoverable cache error via observability mechanism.
 				return TokenPair{}, fmt.Errorf("failed to get refresh result: %w", errStorage)
 			}
 
 			if errStorage = s.accessTokenStorage.Store(ctx, s.tokenGenerator.Hash(tokenPair.AccessToken), identity, s.accessTokenLifetime); errStorage != nil {
-				return tokenPair, errors.Join(ErrAccessTokenNotStored, errStorage)
+				s.observer.AccessTokenStoreFailed(ctx, errStorage)
 			}
 
 			return tokenPair, nil
 		case errors.Is(err, ErrRefreshTokenReuse):
 			errStorage := s.sessionStorage.SetSession(ctx, identity.SessionID, false, s.sessionInactivityTimeout)
 			if errStorage != nil {
-				// TODO: report recoverable cache error via observability mechanism.
+				s.observer.SessionCacheUpdateFailed(ctx, errStorage)
 			}
 
 			return TokenPair{}, fmt.Errorf("failed to extend session: %w", ErrRefreshTokenReuse)
@@ -209,25 +212,19 @@ func (s *Service) Refresh(ctx context.Context, input RefreshInput) (TokenPair, e
 		}
 	}
 
-	var resultErr error
-
 	if err := s.refreshResultStorage.Store(ctx, oldRefreshTokenHash, TokenPair{AccessToken: rawAccessToken, RefreshToken: rawRefreshToken}, s.refreshRetryTTL); err != nil {
-		// TODO: report recoverable cache error via observability mechanism.
-		resultErr = errors.Join(ErrRefreshResultNotStored, err, resultErr)
+		s.observer.RefreshResultStoreFailed(ctx, err)
 	}
 
 	if err := s.accessTokenStorage.Store(ctx, accessTokenHash, identity, s.accessTokenLifetime); err != nil {
-		// TODO: report recoverable cache error via observability mechanism.
-		resultErr = errors.Join(ErrAccessTokenNotStored, err, resultErr)
+		s.observer.AccessTokenStoreFailed(ctx, err)
 	}
 
-	err = s.sessionStorage.SetSession(ctx, identity.SessionID, true, s.sessionInactivityTimeout)
-	if err != nil {
-		// TODO: report recoverable cache error via observability mechanism.
-		resultErr = errors.Join(ErrSessionStatusNotStored, err, resultErr)
+	if err := s.sessionStorage.SetSession(ctx, identity.SessionID, true, s.sessionInactivityTimeout); err != nil {
+		s.observer.SessionCacheUpdateFailed(ctx, err)
 	}
 
-	return TokenPair{AccessToken: rawAccessToken, RefreshToken: rawRefreshToken}, resultErr
+	return TokenPair{AccessToken: rawAccessToken, RefreshToken: rawRefreshToken}, nil
 }
 
 // Login - Возврат ошибки ErrAccessTokenNotStored не означает, что операция не выполнена.

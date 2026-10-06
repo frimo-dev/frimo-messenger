@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/netip"
 
+	"github.com/frimo-dev/frimo-messenger/internal/execution"
 	"github.com/frimo-dev/frimo-messenger/internal/service/auth"
 	"go.uber.org/zap"
 )
@@ -32,7 +33,7 @@ func (a *API) login(w http.ResponseWriter, r *http.Request) {
 
 	ip, err := clientIP(r)
 	if err != nil {
-		a.logger.Warn("failed to determine client ip", zap.Error(err), zap.String("request_id", requestIDFromContext(r.Context())))
+		a.logger.Warn("failed to determine client ip", zap.Error(err), zap.String("request_id", execution.IDFromContext(r.Context())))
 	}
 
 	loginResult, err := a.authService.Login(r.Context(), auth.LoginInput{
@@ -56,7 +57,7 @@ func (a *API) login(w http.ResponseWriter, r *http.Request) {
 				a.logger.Error(
 					"failed to login user",
 					zap.Error(err),
-					zap.String("request_id", requestIDFromContext(r.Context())),
+					zap.String("request_id", execution.IDFromContext(r.Context())),
 				)
 				a.respondError(r.Context(), w, http.StatusInternalServerError, "internal_error", "internal server error")
 			}
@@ -64,10 +65,10 @@ func (a *API) login(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		a.logger.Error("failed to store access token", zap.Error(err), zap.String("request_id", requestIDFromContext(r.Context())))
+		a.logger.Error("failed to store access token", zap.Error(err), zap.String("request_id", execution.IDFromContext(r.Context())))
 	}
 
-	a.logger.Info("user session created", zap.String("request_id", requestIDFromContext(r.Context())))
+	a.logger.Info("user session created", zap.String("request_id", execution.IDFromContext(r.Context())))
 
 	a.respondJSON(r.Context(), w, http.StatusOK, loginResponse{AccessToken: loginResult.AccessToken, RefreshToken: loginResult.RefreshToken})
 }

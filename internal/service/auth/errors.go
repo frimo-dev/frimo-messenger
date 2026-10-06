@@ -20,18 +20,16 @@ var (
 	ErrAccessTokenNotStored = errors.New("access token not stored")
 	ErrAccessTokenInvalid   = errors.New("invalid access token")
 
-	ErrSessionNotFound        = errors.New("session not found")
-	ErrSessionCacheMiss       = errors.New("session cache miss")
-	ErrSessionInactive        = errors.New("session inactive")
-	ErrSessionStatusNotStored = errors.New("session not stored")
+	ErrSessionNotFound  = errors.New("session not found")
+	ErrSessionCacheMiss = errors.New("session cache miss")
+	ErrSessionInactive  = errors.New("session inactive")
 
 	ErrRefreshTokenNotFound = errors.New("refresh token not found")
 	ErrRefreshTokenReuse    = errors.New("refresh token already used")
 	ErrRefreshRetry         = errors.New("refresh retry")
 
-	ErrRefreshResultNotFound  = errors.New("refresh result not found")
-	ErrRefreshRetryExpired    = errors.New("refresh retry expired")
-	ErrRefreshResultNotStored = errors.New("refresh result not stored")
+	ErrRefreshResultNotFound   = errors.New("refresh result not found")
+	ErrRefreshRetryUnavailable = errors.New("refresh retry expired")
 )
 
 type ValidationError struct {

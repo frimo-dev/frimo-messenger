@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 
+	"github.com/frimo-dev/frimo-messenger/internal/execution"
 	"github.com/frimo-dev/frimo-messenger/internal/service/auth"
 	"go.uber.org/zap"
 )
@@ -41,14 +42,14 @@ func (a *API) resendVerificationToken(w http.ResponseWriter, r *http.Request) {
 
 			a.logger.Info(
 				"verification resend not scheduled",
-				zap.String("request_id", requestIDFromContext(r.Context())),
+				zap.String("request_id", execution.IDFromContext(r.Context())),
 				zap.Error(err),
 			)
 
 		default:
 			a.logger.Error(
 				"resend verification email failed",
-				zap.String("request_id", requestIDFromContext(r.Context())),
+				zap.String("request_id", execution.IDFromContext(r.Context())),
 				zap.Error(err),
 			)
 

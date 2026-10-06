@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"uuid"
 
+	"github.com/frimo-dev/frimo-messenger/internal/execution"
 	"github.com/frimo-dev/frimo-messenger/internal/service/auth"
 	"go.uber.org/zap"
 )
@@ -52,7 +53,7 @@ func (a *API) refresh(w http.ResponseWriter, r *http.Request) {
 		})
 	if err != nil {
 		switch {
-		case errors.Is(err, auth.ErrRefreshRetryExpired),
+		case errors.Is(err, auth.ErrRefreshRetryUnavailable),
 			errors.Is(err, auth.ErrRefreshTokenReuse),
 			errors.Is(err, auth.ErrSessionInactive):
 
@@ -69,26 +70,13 @@ func (a *API) refresh(w http.ResponseWriter, r *http.Request) {
 			a.logger.Error(
 				"failed to store access token",
 				zap.Error(err),
-				zap.String("request_id", requestIDFromContext(r.Context())),
+				zap.String("request_id", execution.IDFromContext(r.Context())),
 			)
-		case errors.Is(err, auth.ErrRefreshResultNotStored):
-			a.logger.Error(
-				"failed to store refresh result",
-				zap.Error(err),
-				zap.String("request_id", requestIDFromContext(r.Context())),
-			)
-		case errors.Is(err, auth.ErrSessionStatusNotStored):
-			a.logger.Error(
-				"failed to store session status",
-				zap.Error(err),
-				zap.String("request_id", requestIDFromContext(r.Context())),
-			)
-
 		default:
 			a.logger.Error(
 				"failed to refresh session",
 				zap.Error(err),
-				zap.String("request_id", requestIDFromContext(r.Context())),
+				zap.String("request_id", execution.IDFromContext(r.Context())),
 			)
 
 			a.respondError(

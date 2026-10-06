@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 
+	"github.com/frimo-dev/frimo-messenger/internal/execution"
 	"github.com/frimo-dev/frimo-messenger/internal/service/auth"
 	"go.uber.org/zap"
 )
@@ -65,7 +66,7 @@ func (a *API) verifyEmail(w http.ResponseWriter, r *http.Request) {
 			a.logger.Error(
 				"failed to verify email",
 				zap.Error(err),
-				zap.String("request_id", requestIDFromContext(r.Context())),
+				zap.String("request_id", execution.IDFromContext(r.Context())),
 			)
 			a.respondError(
 				r.Context(),
@@ -80,7 +81,7 @@ func (a *API) verifyEmail(w http.ResponseWriter, r *http.Request) {
 
 	a.logger.Info(
 		"user verified successfully",
-		zap.String("request_id", requestIDFromContext(r.Context())),
+		zap.String("request_id", execution.IDFromContext(r.Context())),
 	)
 
 	a.respondJSON(r.Context(), w, http.StatusOK, verifyEmailResponse{Status: "email_verified"})

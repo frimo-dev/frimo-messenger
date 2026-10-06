@@ -9,6 +9,7 @@ import (
 	"time"
 	"uuid"
 
+	"github.com/frimo-dev/frimo-messenger/internal/execution"
 	"github.com/frimo-dev/frimo-messenger/internal/service/auth"
 	"go.uber.org/zap"
 )
@@ -56,7 +57,7 @@ func RecoveryMiddleware(logger *zap.Logger, next http.Handler) http.Handler {
 
 			logger.Error(
 				"http handler panic",
-				zap.String("request_id", requestIDFromContext(r.Context())),
+				zap.String("request_id", execution.IDFromContext(r.Context())),
 				zap.String("method", r.Method),
 				zap.String("path", r.URL.Path),
 				zap.Any("panic", recovered),
@@ -78,7 +79,7 @@ func RequestLoggingMiddleware(logger *zap.Logger, next http.Handler) http.Handle
 		startedAt := time.Now()
 		requestID := uuid.New()
 
-		ctx := withRequestID(r.Context(), requestID.String())
+		ctx := execution.WithID(r.Context(), requestID.String())
 		r = r.WithContext(ctx)
 
 		writer := &responseWriter{ResponseWriter: w, status: http.StatusOK}
@@ -105,7 +106,7 @@ func AuthenticationMiddleware(logger *zap.Logger, authenticator AccessTokenAuthe
 				logger.Error(
 					"failed to write error response",
 					zap.Error(err),
-					zap.String("request_id", requestIDFromContext(r.Context())),
+					zap.String("request_id", execution.IDFromContext(r.Context())),
 				)
 			}
 			return
@@ -121,7 +122,7 @@ func AuthenticationMiddleware(logger *zap.Logger, authenticator AccessTokenAuthe
 					logger.Error(
 						"failed to write error response",
 						zap.Error(err),
-						zap.String("request_id", requestIDFromContext(r.Context())),
+						zap.String("request_id", execution.IDFromContext(r.Context())),
 					)
 				}
 				return
@@ -129,7 +130,7 @@ func AuthenticationMiddleware(logger *zap.Logger, authenticator AccessTokenAuthe
 
 			logger.Error(
 				"failed to authenticate request",
-				zap.String("request_id", requestIDFromContext(r.Context())),
+				zap.String("request_id", execution.IDFromContext(r.Context())),
 				zap.Error(err),
 			)
 
@@ -138,7 +139,7 @@ func AuthenticationMiddleware(logger *zap.Logger, authenticator AccessTokenAuthe
 				logger.Error(
 					"failed to write error response",
 					zap.Error(err),
-					zap.String("request_id", requestIDFromContext(r.Context())),
+					zap.String("request_id", execution.IDFromContext(r.Context())),
 				)
 			}
 			return
