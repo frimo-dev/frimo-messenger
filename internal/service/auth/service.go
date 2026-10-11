@@ -299,15 +299,15 @@ func (s *Service) Login(ctx context.Context, input LoginInput) (TokenPair, error
 		CreatedAt: now,
 	}
 
-	err = s.sessionRepository.CreateSession(ctx, session, refreshToken)
-	if err != nil {
-		return TokenPair{}, fmt.Errorf("failed create session: %w", err)
-	}
-
 	// TODO: hash must be saved in Redis preferably in a transaction
 	rawAccessToken, accessTokenHash, err := s.tokenGenerator.Generate()
 	if err != nil {
 		return TokenPair{}, fmt.Errorf("failed generate access token: %w", err)
+	}
+
+	err = s.sessionRepository.CreateSession(ctx, session, refreshToken)
+	if err != nil {
+		return TokenPair{}, fmt.Errorf("failed create session: %w", err)
 	}
 
 	identity := Identity{UserID: loginUser.ID, SessionID: session.ID}
