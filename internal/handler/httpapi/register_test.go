@@ -1,7 +1,7 @@
 package httpapi_test
 
 import (
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -16,353 +16,398 @@ import (
 	"go.uber.org/zap"
 )
 
-func TestAPI_Register_Success(t *testing.T) {
-	ctrl := gomock.NewController(t)
-
-	authService := mocks.NewMockAuthService(ctrl)
-	userService := mocks.NewMockUserService(ctrl)
-	accessTokenVerifier := mocks.NewMockAccessTokenVerifier(ctrl)
-
+func TestAPI_Register(t *testing.T) {
 	userID := uuid.New()
 
-	authService.EXPECT().Register(gomock.Any(),
-		auth.RegistrationInput{
-			Email:    "test@example.com",
-			Password: "very-secure-password",
+	const (
+		validEmail    = "test@example.com"
+		validPassword = "very-secure-password"
+	)
+
+	validBody := `{
+		"email": "test@example.com",
+		"password": "very-secure-password"
+	}`
+
+	internalErr := errors.New("database unavailable")
+
+	tests := []struct {
+		name string
+		body string
+
+		prepare func(authService *mocks.MockAuthService)
+
+		wantStatus  int
+		wantID      string
+		wantEmail   string
+		wantCode    string
+		wantMessage string
+	}{
+		{
+			name: "success",
+			body: validBody,
+
+			prepare: func(authService *mocks.MockAuthService) {
+				authService.EXPECT().
+					Register(
+						gomock.Any(),
+						auth.RegistrationInput{
+							Email:    validEmail,
+							Password: validPassword,
+						},
+					).
+					Return(
+						auth.User{
+							ID:    userID,
+							Email: validEmail,
+						},
+						nil,
+					)
+			},
+
+			wantStatus: http.StatusAccepted,
+			wantID:     userID.String(),
+			wantEmail:  validEmail,
 		},
-	).Return(
-		auth.User{
-			ID:    userID,
-			Email: "test@example.com",
+		{
+			name: "validation error",
+			body: `{
+				"email": "not-an-email",
+				"password": "very-secure-password"
+			}`,
+
+			prepare: func(authService *mocks.MockAuthService) {
+				authService.EXPECT().
+					Register(
+						gomock.Any(),
+						auth.RegistrationInput{
+							Email:    "not-an-email",
+							Password: validPassword,
+						},
+					).
+					Return(
+						auth.User{},
+						&auth.ValidationError{
+							Code:    "invalid_email",
+							Field:   "email",
+							Message: "email has invalid format",
+						},
+					)
+			},
+
+			wantStatus:  http.StatusBadRequest,
+			wantCode:    "invalid_email",
+			wantMessage: "email has invalid format",
 		},
-		nil,
-	)
+		{
+			name: "email already exists",
+			body: validBody,
 
-	api := httpapi.New(zap.NewNop(), accessTokenVerifier, authService, userService)
+			prepare: func(authService *mocks.MockAuthService) {
+				authService.EXPECT().
+					Register(
+						gomock.Any(),
+						auth.RegistrationInput{
+							Email:    validEmail,
+							Password: validPassword,
+						},
+					).
+					Return(
+						auth.User{},
+						auth.ErrEmailAlreadyExists,
+					)
+			},
 
-	req := httptest.NewRequest(
-		http.MethodPost,
-		"/auth/register",
-		strings.NewReader(`{
-			"email": "test@example.com",
-			"password": "very-secure-password"
-		}`),
-	)
-
-	rec := httptest.NewRecorder()
-
-	api.Handler().ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusAccepted {
-		t.Fatalf("expected status %d, got %d", http.StatusAccepted, rec.Code)
-	}
-
-	var response struct {
-		ID    string `json:"id"`
-		Email string `json:"email"`
-	}
-
-	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
-		t.Fatalf("unmarshal response: %v", err)
-	}
-
-	if response.ID != userID.String() {
-		t.Errorf("expected ID %q, got %q", userID.String(), response.ID)
-	}
-
-	if response.Email != "test@example.com" {
-		t.Errorf("expected email %q, got %q", "test@example.com", response.Email)
-	}
-}
-
-func TestAPI_Register_InvalidJSON(t *testing.T) {
-	ctrl := gomock.NewController(t)
-
-	authService := mocks.NewMockAuthService(ctrl)
-	userService := mocks.NewMockUserService(ctrl)
-	accessTokenVerifier := mocks.NewMockAccessTokenVerifier(ctrl)
-
-	api := httpapi.New(zap.NewNop(), accessTokenVerifier, authService, userService)
-	req := httptest.NewRequest(http.MethodPost, "/auth/register", strings.NewReader(`{"email":`))
-	rec := httptest.NewRecorder()
-
-	api.Handler().ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, rec.Code)
-	}
-}
-
-func TestAPI_Register_ValidationError(t *testing.T) {
-	ctrl := gomock.NewController(t)
-
-	authService := mocks.NewMockAuthService(ctrl)
-	userService := mocks.NewMockUserService(ctrl)
-	accessTokenVerifier := mocks.NewMockAccessTokenVerifier(ctrl)
-
-	validationErr := &auth.ValidationError{
-		Code:    "invalid_email",
-		Field:   "email",
-		Message: "email has invalid format",
-	}
-
-	authService.EXPECT().Register(
-		gomock.Any(),
-		auth.RegistrationInput{
-			Email:    "not-an-email",
-			Password: "very-secure-password",
+			wantStatus:  http.StatusConflict,
+			wantCode:    "email_already_exists",
+			wantMessage: "user with this email already exists",
 		},
-	).Return(auth.User{}, validationErr)
+		{
+			name: "internal error",
+			body: validBody,
 
-	api := httpapi.New(zap.NewNop(), accessTokenVerifier, authService, userService)
+			prepare: func(authService *mocks.MockAuthService) {
+				authService.EXPECT().
+					Register(
+						gomock.Any(),
+						auth.RegistrationInput{
+							Email:    validEmail,
+							Password: validPassword,
+						},
+					).
+					Return(
+						auth.User{},
+						internalErr,
+					)
+			},
 
-	req := httptest.NewRequest(
-		http.MethodPost,
-		"/auth/register",
-		strings.NewReader(`{
-			"email": "not-an-email",
-			"password": "very-secure-password"
-		}`),
-	)
-
-	rec := httptest.NewRecorder()
-
-	api.Handler().ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, rec.Code)
-	}
-}
-
-func TestAPI_Register_EmailAlreadyExists(t *testing.T) {
-	ctrl := gomock.NewController(t)
-
-	authService := mocks.NewMockAuthService(ctrl)
-	userService := mocks.NewMockUserService(ctrl)
-	accessTokenVerifier := mocks.NewMockAccessTokenVerifier(ctrl)
-
-	authService.EXPECT().Register(
-		gomock.Any(),
-		auth.RegistrationInput{
-			Email:    "test@example.com",
-			Password: "very-secure-password",
+			wantStatus:  http.StatusInternalServerError,
+			wantCode:    "internal_error",
+			wantMessage: "internal server error",
 		},
-	).Return(auth.User{}, auth.ErrEmailAlreadyExists)
+		{
+			name:        "invalid JSON",
+			body:        `{"email":`,
+			wantStatus:  http.StatusBadRequest,
+			wantCode:    "invalid_request",
+			wantMessage: "invalid request body",
+		},
+		{
+			name: "unknown field",
+			body: `{
+				"email": "test@example.com",
+				"password": "very-secure-password",
+				"admin": true
+			}`,
 
-	api := httpapi.New(zap.NewNop(), accessTokenVerifier, authService, userService)
+			wantStatus:  http.StatusBadRequest,
+			wantCode:    "invalid_request",
+			wantMessage: "invalid request body",
+		},
+		{
+			name: "multiple JSON objects",
+			body: `{
+				"email": "test@example.com",
+				"password": "very-secure-password"
+			}{
+				"email": "second@example.com",
+				"password": "another-password"
+			}`,
 
-	req := httptest.NewRequest(
-		http.MethodPost,
-		"/auth/register",
-		strings.NewReader(`{
-			"email": "test@example.com",
-			"password": "very-secure-password"
-		}`),
-	)
+			wantStatus:  http.StatusBadRequest,
+			wantCode:    "invalid_request",
+			wantMessage: "invalid request body",
+		},
+		{
+			name:        "empty body",
+			body:        "",
+			wantStatus:  http.StatusBadRequest,
+			wantCode:    "invalid_request",
+			wantMessage: "invalid request body",
+		},
+		{
+			name: "body too large",
+			body: `{
+				"email": "test@example.com",
+				"password": "` + strings.Repeat("a", 20*1024) + `"
+			}`,
 
-	rec := httptest.NewRecorder()
+			wantStatus:  http.StatusBadRequest,
+			wantCode:    "invalid_request",
+			wantMessage: "invalid request body",
+		},
+		{
+			name: "invalid email field type",
+			body: `{
+				"email": 123,
+				"password": "very-secure-password"
+			}`,
 
-	api.Handler().ServeHTTP(rec, req)
+			wantStatus:  http.StatusBadRequest,
+			wantCode:    "invalid_request",
+			wantMessage: "invalid request body",
+		},
+		{
+			name: "invalid password field type",
+			body: `{
+				"email": "test@example.com",
+				"password": 123
+			}`,
 
-	if rec.Code != http.StatusConflict {
-		t.Fatalf("expected status %d, got %d", http.StatusConflict, rec.Code)
+			wantStatus:  http.StatusBadRequest,
+			wantCode:    "invalid_request",
+			wantMessage: "invalid request body",
+		},
+		{
+			name: "missing email",
+			body: `{
+				"password": "very-secure-password"
+			}`,
+
+			wantStatus:  http.StatusBadRequest,
+			wantCode:    "invalid_request",
+			wantMessage: "invalid request body",
+		},
+		{
+			name: "empty email",
+			body: `{
+				"email": "",
+				"password": "very-secure-password"
+			}`,
+
+			wantStatus:  http.StatusBadRequest,
+			wantCode:    "invalid_request",
+			wantMessage: "invalid request body",
+		},
+		{
+			name: "missing password",
+			body: `{
+				"email": "test@example.com"
+			}`,
+
+			wantStatus:  http.StatusBadRequest,
+			wantCode:    "invalid_request",
+			wantMessage: "invalid request body",
+		},
+		{
+			name: "empty password",
+			body: `{
+				"email": "test@example.com",
+				"password": ""
+			}`,
+
+			wantStatus:  http.StatusBadRequest,
+			wantCode:    "invalid_request",
+			wantMessage: "invalid request body",
+		},
 	}
-}
 
-func TestAPI_Register_InternalError(t *testing.T) {
-	ctrl := gomock.NewController(t)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
 
-	authService := mocks.NewMockAuthService(ctrl)
-	userService := mocks.NewMockUserService(ctrl)
-	accessTokenVerifier := mocks.NewMockAccessTokenVerifier(ctrl)
+			authService := mocks.NewMockAuthService(ctrl)
+			userService := mocks.NewMockUserService(ctrl)
 
-	serviceErr := errors.New("database unavailable")
+			if tt.prepare != nil {
+				tt.prepare(authService)
+			}
 
-	authService.EXPECT().Register(gomock.Any(), gomock.Any()).Return(auth.User{}, serviceErr)
+			api := httpapi.New(
+				zap.NewNop(),
+				authService,
+				userService,
+			)
 
-	api := httpapi.New(zap.NewNop(), accessTokenVerifier, authService, userService)
+			req := httptest.NewRequest(
+				http.MethodPost,
+				"/auth/register",
+				strings.NewReader(tt.body),
+			)
 
-	req := httptest.NewRequest(
-		http.MethodPost,
-		"/auth/register",
-		strings.NewReader(`{
-			"email": "test@example.com",
-			"password": "very-secure-password"
-		}`),
-	)
+			rec := httptest.NewRecorder()
 
-	rec := httptest.NewRecorder()
+			api.Handler().ServeHTTP(rec, req)
 
-	api.Handler().ServeHTTP(rec, req)
+			// Ошибочные ответы проверяем через общий helper.
+			if tt.wantStatus != http.StatusAccepted {
+				assertErrorResponse(
+					t,
+					rec,
+					tt.wantStatus,
+					tt.wantCode,
+					tt.wantMessage,
+				)
 
-	if rec.Code != http.StatusInternalServerError {
-		t.Fatalf("expected status %d, got %d", http.StatusInternalServerError, rec.Code)
+				return
+			}
+
+			// Проверяем статус успешного ответа.
+			if rec.Code != http.StatusAccepted {
+				t.Fatalf(
+					"status = %d, want %d; body = %s",
+					rec.Code,
+					http.StatusAccepted,
+					rec.Body.String(),
+				)
+			}
+
+			// Проверяем Content-Type.
+			if contentType := rec.Header().Get("Content-Type"); contentType != "application/json" {
+				t.Errorf(
+					"Content-Type = %q, want %q",
+					contentType,
+					"application/json",
+				)
+			}
+
+			// Проверяем данные зарегистрированного пользователя.
+			var response struct {
+				ID    string `json:"id"`
+				Email string `json:"email"`
+			}
+
+			if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+				t.Fatalf(
+					"unmarshal success response: %v; body = %s",
+					err,
+					rec.Body.String(),
+				)
+			}
+
+			if response.ID != tt.wantID {
+				t.Errorf(
+					"ID = %q, want %q",
+					response.ID,
+					tt.wantID,
+				)
+			}
+
+			if response.Email != tt.wantEmail {
+				t.Errorf(
+					"Email = %q, want %q",
+					response.Email,
+					tt.wantEmail,
+				)
+			}
+		})
 	}
 }
 
 func TestAPI_Register_MethodNotAllowed(t *testing.T) {
-	ctrl := gomock.NewController(t)
-
-	authService := mocks.NewMockAuthService(ctrl)
-	userService := mocks.NewMockUserService(ctrl)
-	accessTokenVerifier := mocks.NewMockAccessTokenVerifier(ctrl)
-
-	api := httpapi.New(zap.NewNop(), accessTokenVerifier, authService, userService)
-
-	req := httptest.NewRequest(
-		http.MethodGet,
-		"/auth/register",
-		nil,
-	)
-
-	rec := httptest.NewRecorder()
-
-	api.Handler().ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusMethodNotAllowed {
-		t.Fatalf("expected status %d, got %d", http.StatusMethodNotAllowed, rec.Code)
+	tests := []struct {
+		name   string
+		method string
+	}{
+		{
+			name:   "GET",
+			method: http.MethodGet,
+		},
+		{
+			name:   "PUT",
+			method: http.MethodPut,
+		},
+		{
+			name:   "PATCH",
+			method: http.MethodPatch,
+		},
+		{
+			name:   "DELETE",
+			method: http.MethodDelete,
+		},
 	}
-}
 
-func TestAPI_Register_UnknownField(t *testing.T) {
-	ctrl := gomock.NewController(t)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
 
-	authService := mocks.NewMockAuthService(ctrl)
-	userService := mocks.NewMockUserService(ctrl)
-	accessTokenVerifier := mocks.NewMockAccessTokenVerifier(ctrl)
+			authService := mocks.NewMockAuthService(ctrl)
+			userService := mocks.NewMockUserService(ctrl)
 
-	api := httpapi.New(zap.NewNop(), accessTokenVerifier, authService, userService)
+			api := httpapi.New(
+				zap.NewNop(),
+				authService,
+				userService,
+			)
 
-	req := httptest.NewRequest(
-		http.MethodPost,
-		"/auth/register",
-		strings.NewReader(`{
-			"email": "test@example.com",
-			"password": "very-secure-password",
-			"admin": true
-		}`),
-	)
+			req := httptest.NewRequest(
+				tt.method,
+				"/auth/register",
+				nil,
+			)
 
-	rec := httptest.NewRecorder()
+			rec := httptest.NewRecorder()
 
-	api.Handler().ServeHTTP(rec, req)
+			api.Handler().ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, rec.Code)
-	}
-}
-
-func TestAPI_Register_MultipleJSONObjects(t *testing.T) {
-	ctrl := gomock.NewController(t)
-
-	authService := mocks.NewMockAuthService(ctrl)
-	userService := mocks.NewMockUserService(ctrl)
-	accessTokenVerifier := mocks.NewMockAccessTokenVerifier(ctrl)
-
-	api := httpapi.New(zap.NewNop(), accessTokenVerifier, authService, userService)
-
-	req := httptest.NewRequest(
-		http.MethodPost,
-		"/auth/register",
-		strings.NewReader(`
-			{
-				"email": "test@example.com",
-				"password": "very-secure-password"
+			if rec.Code != http.StatusMethodNotAllowed {
+				t.Fatalf(
+					"status = %d, want %d; body = %s",
+					rec.Code,
+					http.StatusMethodNotAllowed,
+					rec.Body.String(),
+				)
 			}
-			{
-				"email": "second@example.com",
-				"password": "another-password"
-			}
-		`),
-	)
-
-	rec := httptest.NewRecorder()
-
-	api.Handler().ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, rec.Code)
-	}
-}
-
-func TestAPI_Register_EmptyBody(t *testing.T) {
-	ctrl := gomock.NewController(t)
-
-	authService := mocks.NewMockAuthService(ctrl)
-	userService := mocks.NewMockUserService(ctrl)
-	accessTokenVerifier := mocks.NewMockAccessTokenVerifier(ctrl)
-
-	api := httpapi.New(zap.NewNop(), accessTokenVerifier, authService, userService)
-
-	req := httptest.NewRequest(
-		http.MethodPost,
-		"/auth/register",
-		nil,
-	)
-
-	rec := httptest.NewRecorder()
-
-	api.Handler().ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, rec.Code)
-	}
-}
-
-func TestAPI_Register_BodyTooLarge(t *testing.T) {
-	ctrl := gomock.NewController(t)
-
-	authService := mocks.NewMockAuthService(ctrl)
-	userService := mocks.NewMockUserService(ctrl)
-	accessTokenVerifier := mocks.NewMockAccessTokenVerifier(ctrl)
-
-	api := httpapi.New(zap.NewNop(), accessTokenVerifier, authService, userService)
-
-	largePassword := strings.Repeat("a", 20*1024)
-
-	body := `{
-		"email": "test@example.com",
-		"password": "` + largePassword + `"
-	}`
-
-	req := httptest.NewRequest(
-		http.MethodPost,
-		"/auth/register",
-		strings.NewReader(body),
-	)
-
-	rec := httptest.NewRecorder()
-
-	api.Handler().ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, rec.Code)
-	}
-}
-
-func TestAPI_Register_InvalidFieldType(t *testing.T) {
-	ctrl := gomock.NewController(t)
-
-	authService := mocks.NewMockAuthService(ctrl)
-	userService := mocks.NewMockUserService(ctrl)
-	accessTokenVerifier := mocks.NewMockAccessTokenVerifier(ctrl)
-
-	api := httpapi.New(zap.NewNop(), accessTokenVerifier, authService, userService)
-
-	req := httptest.NewRequest(
-		http.MethodPost,
-		"/auth/register",
-		strings.NewReader(`{
-			"email": 123,
-			"password": "very-secure-password"
-		}`),
-	)
-
-	rec := httptest.NewRecorder()
-
-	api.Handler().ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, rec.Code)
+		})
 	}
 }

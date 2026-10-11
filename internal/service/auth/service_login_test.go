@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+
 	"uuid"
 
 	"github.com/frimo-dev/frimo-messenger/internal/service/auth"
@@ -59,13 +60,23 @@ func TestService_Login_Success(t *testing.T) {
 	var createdSession auth.Session
 	var createdRefreshToken auth.RefreshToken
 
+	// Порядок соответствует Service.Login:
+	// Generate refresh -> Generate access -> CreateSession.
 	gomock.InOrder(
 		tokenGenerator.EXPECT().
 			Generate().
 			Return("refresh-token", refreshTokenHash, nil),
 
+		tokenGenerator.EXPECT().
+			Generate().
+			Return("access-token", accessTokenHash, nil),
+
 		sessionRepository.EXPECT().
-			CreateSession(gomock.Any(), gomock.Any(), gomock.Any()).
+			CreateSession(
+				gomock.Any(),
+				gomock.Any(),
+				gomock.Any(),
+			).
 			DoAndReturn(func(
 				_ context.Context,
 				session auth.Session,
@@ -75,10 +86,6 @@ func TestService_Login_Success(t *testing.T) {
 				createdRefreshToken = refreshToken
 				return nil
 			}),
-
-		tokenGenerator.EXPECT().
-			Generate().
-			Return("access-token", accessTokenHash, nil),
 	)
 
 	accessTokenStorage.EXPECT().
@@ -95,7 +102,11 @@ func TestService_Login_Success(t *testing.T) {
 			ttl time.Duration,
 		) error {
 			if !bytes.Equal(hash, accessTokenHash) {
-				t.Errorf("access token hash = %q, want %q", hash, accessTokenHash)
+				t.Errorf(
+					"access token hash = %q, want %q",
+					hash,
+					accessTokenHash,
+				)
 			}
 
 			if identity.UserID != userID {
@@ -449,12 +460,21 @@ func TestService_Login_Errors(t *testing.T) {
 			prepare: func(d dependencies) {
 				expectValidCredentials(d)
 
+				// Обе генерации происходят до CreateSession.
 				gomock.InOrder(
 					d.tokenGenerator.EXPECT().
 						Generate().
 						Return(
 							"refresh-token",
 							[]byte("refresh-hash"),
+							nil,
+						),
+
+					d.tokenGenerator.EXPECT().
+						Generate().
+						Return(
+							"access-token",
+							[]byte("access-hash"),
 							nil,
 						),
 
@@ -479,6 +499,8 @@ func TestService_Login_Errors(t *testing.T) {
 			prepare: func(d dependencies) {
 				expectValidCredentials(d)
 
+				// Если access-токен не сгенерирован,
+				// CreateSession вызываться не должен.
 				gomock.InOrder(
 					d.tokenGenerator.EXPECT().
 						Generate().
@@ -487,14 +509,6 @@ func TestService_Login_Errors(t *testing.T) {
 							[]byte("refresh-hash"),
 							nil,
 						),
-
-					d.sessionRepository.EXPECT().
-						CreateSession(
-							gomock.Any(),
-							gomock.Any(),
-							gomock.Any(),
-						).
-						Return(nil),
 
 					d.tokenGenerator.EXPECT().
 						Generate().
@@ -545,7 +559,10 @@ func TestService_Login_Errors(t *testing.T) {
 			pair, err := service.Login(context.Background(), tt.input)
 
 			if pair != (auth.TokenPair{}) {
-				t.Errorf("expected empty token pair, got %+v", pair)
+				t.Errorf(
+					"expected empty token pair, got %+v",
+					pair,
+				)
 			}
 
 			if tt.wantCode != "" {
@@ -616,15 +633,27 @@ func TestService_Login_AccessTokenStoreFailed(t *testing.T) {
 	gomock.InOrder(
 		tokenGenerator.EXPECT().
 			Generate().
-			Return("refresh-token", []byte("refresh-hash"), nil),
-
-		sessionRepository.EXPECT().
-			CreateSession(gomock.Any(), gomock.Any(), gomock.Any()).
-			Return(nil),
+			Return(
+				"refresh-token",
+				[]byte("refresh-hash"),
+				nil,
+			),
 
 		tokenGenerator.EXPECT().
 			Generate().
-			Return("access-token", []byte("access-hash"), nil),
+			Return(
+				"access-token",
+				[]byte("access-hash"),
+				nil,
+			),
+
+		sessionRepository.EXPECT().
+			CreateSession(
+				gomock.Any(),
+				gomock.Any(),
+				gomock.Any(),
+			).
+			Return(nil),
 
 		accessTokenStorage.EXPECT().
 			Store(

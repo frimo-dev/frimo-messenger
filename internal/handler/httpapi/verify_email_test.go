@@ -1,7 +1,7 @@
 package httpapi_test
 
 import (
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -14,220 +14,297 @@ import (
 	"go.uber.org/zap"
 )
 
-func TestAPI_VerifyEmail_Success(t *testing.T) {
-	ctrl := gomock.NewController(t)
-
-	authService := mocks.NewMockAuthService(ctrl)
-	userService := mocks.NewMockUserService(ctrl)
-	accessTokenVerifier := mocks.NewMockAccessTokenVerifier(ctrl)
-
-	authService.EXPECT().ConfirmEmail(gomock.Any(), "raw-verification-token").Return(nil)
-
-	api := httpapi.New(zap.NewNop(), accessTokenVerifier, authService, userService)
-
-	req := httptest.NewRequest(
-		http.MethodGet,
-		"/auth/verify-email?token=raw-verification-token",
-		nil,
-	)
-
-	rec := httptest.NewRecorder()
-
-	api.Handler().ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusOK {
-		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
-	}
-
-	var response struct {
-		Status string `json:"status"`
-	}
-
-	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
-		t.Fatalf("unmarshal response: %v", err)
-	}
-
-	if response.Status != "email_verified" {
-		t.Errorf("expected status %q, got %q", "email_verified", response.Status)
-	}
-}
-
-func TestAPI_VerifyEmail_MissingToken(t *testing.T) {
-	ctrl := gomock.NewController(t)
-
-	authService := mocks.NewMockAuthService(ctrl)
-	userService := mocks.NewMockUserService(ctrl)
-	accessTokenVerifier := mocks.NewMockAccessTokenVerifier(ctrl)
-
-	api := httpapi.New(zap.NewNop(), accessTokenVerifier, authService, userService)
-
-	req := httptest.NewRequest(
-		http.MethodGet,
-		"/auth/verify-email",
-		nil,
-	)
-
-	rec := httptest.NewRecorder()
-
-	api.Handler().ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, rec.Code)
-	}
-}
-
-func TestAPI_VerifyEmail_InvalidToken(t *testing.T) {
-	ctrl := gomock.NewController(t)
-
-	authService := mocks.NewMockAuthService(ctrl)
-	userService := mocks.NewMockUserService(ctrl)
-	accessTokenVerifier := mocks.NewMockAccessTokenVerifier(ctrl)
-
-	authService.EXPECT().ConfirmEmail(gomock.Any(), "invalid-token").Return(auth.ErrInvalidToken)
-
-	api := httpapi.New(zap.NewNop(), accessTokenVerifier, authService, userService)
-
-	req := httptest.NewRequest(
-		http.MethodGet,
-		"/auth/verify-email?token=invalid-token",
-		nil,
-	)
-
-	rec := httptest.NewRecorder()
-
-	api.Handler().ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, rec.Code)
-	}
-}
-
-func TestAPI_VerifyEmail_ExpiredToken(t *testing.T) {
-	ctrl := gomock.NewController(t)
-
-	authService := mocks.NewMockAuthService(ctrl)
-	userService := mocks.NewMockUserService(ctrl)
-	accessTokenVerifier := mocks.NewMockAccessTokenVerifier(ctrl)
-
-	authService.EXPECT().ConfirmEmail(gomock.Any(), "expired-token").Return(auth.ErrExpiredToken)
-
-	api := httpapi.New(zap.NewNop(), accessTokenVerifier, authService, userService)
-
-	req := httptest.NewRequest(
-		http.MethodGet,
-		"/auth/verify-email?token=expired-token",
-		nil,
-	)
-
-	rec := httptest.NewRecorder()
-
-	api.Handler().ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, rec.Code)
-	}
-}
-
-func TestAPI_VerifyEmail_UsedToken(t *testing.T) {
-	ctrl := gomock.NewController(t)
-
-	authService := mocks.NewMockAuthService(ctrl)
-	userService := mocks.NewMockUserService(ctrl)
-	accessTokenVerifier := mocks.NewMockAccessTokenVerifier(ctrl)
-
-	authService.EXPECT().ConfirmEmail(gomock.Any(), "used-token").Return(auth.ErrUsedToken)
-
-	api := httpapi.New(zap.NewNop(), accessTokenVerifier, authService, userService)
-
-	req := httptest.NewRequest(
-		http.MethodGet,
-		"/auth/verify-email?token=used-token",
-		nil,
-	)
-
-	rec := httptest.NewRecorder()
-
-	api.Handler().ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusConflict {
-		t.Fatalf("expected status %d, got %d", http.StatusConflict, rec.Code)
-	}
-}
-
-func TestAPI_VerifyEmail_InternalError(t *testing.T) {
-	ctrl := gomock.NewController(t)
-
-	authService := mocks.NewMockAuthService(ctrl)
-	userService := mocks.NewMockUserService(ctrl)
-	accessTokenVerifier := mocks.NewMockAccessTokenVerifier(ctrl)
-
+func TestAPI_VerifyEmail(t *testing.T) {
 	serviceErr := errors.New("database unavailable")
 
-	authService.EXPECT().ConfirmEmail(gomock.Any(), "raw-verification-token").Return(serviceErr)
+	tests := []struct {
+		name string
+		url  string
 
-	api := httpapi.New(zap.NewNop(), accessTokenVerifier, authService, userService)
+		prepare func(authService *mocks.MockAuthService)
 
-	req := httptest.NewRequest(
-		http.MethodGet,
-		"/auth/verify-email?token=raw-verification-token",
-		nil,
-	)
+		wantStatus   int
+		wantResponse string
+		wantCode     string
+		wantMessage  string
+	}{
+		{
+			name: "success",
+			url:  "/auth/verify-email?token=raw-verification-token",
 
-	rec := httptest.NewRecorder()
+			prepare: func(authService *mocks.MockAuthService) {
+				authService.EXPECT().
+					ConfirmEmail(gomock.Any(), "raw-verification-token").
+					Return(nil)
+			},
 
-	api.Handler().ServeHTTP(rec, req)
+			wantStatus:   http.StatusOK,
+			wantResponse: "email_verified",
+		},
+		{
+			name: "missing token",
+			url:  "/auth/verify-email",
 
-	if rec.Code != http.StatusInternalServerError {
-		t.Fatalf("expected status %d, got %d", http.StatusInternalServerError, rec.Code)
+			wantStatus:  http.StatusBadRequest,
+			wantCode:    "verification_token_required",
+			wantMessage: "verification token is required",
+		},
+		{
+			name: "empty token",
+			url:  "/auth/verify-email?token=",
+
+			wantStatus:  http.StatusBadRequest,
+			wantCode:    "verification_token_required",
+			wantMessage: "verification token is required",
+		},
+		{
+			name: "invalid token",
+			url:  "/auth/verify-email?token=invalid-token",
+
+			prepare: func(authService *mocks.MockAuthService) {
+				authService.EXPECT().
+					ConfirmEmail(gomock.Any(), "invalid-token").
+					Return(auth.ErrInvalidToken)
+			},
+
+			wantStatus:  http.StatusBadRequest,
+			wantCode:    "invalid_verification_token",
+			wantMessage: "verification token is invalid",
+		},
+		{
+			name: "expired token",
+			url:  "/auth/verify-email?token=expired-token",
+
+			prepare: func(authService *mocks.MockAuthService) {
+				authService.EXPECT().
+					ConfirmEmail(gomock.Any(), "expired-token").
+					Return(auth.ErrExpiredToken)
+			},
+
+			wantStatus:  http.StatusBadRequest,
+			wantCode:    "verification_token_expired",
+			wantMessage: "verification token has expired",
+		},
+		{
+			name: "used token",
+			url:  "/auth/verify-email?token=used-token",
+
+			prepare: func(authService *mocks.MockAuthService) {
+				authService.EXPECT().
+					ConfirmEmail(gomock.Any(), "used-token").
+					Return(auth.ErrUsedToken)
+			},
+
+			wantStatus:  http.StatusConflict,
+			wantCode:    "verification_token_used",
+			wantMessage: "verification token has already been used",
+		},
+		{
+			name: "revoked token",
+			url:  "/auth/verify-email?token=revoked-token",
+
+			prepare: func(authService *mocks.MockAuthService) {
+				authService.EXPECT().
+					ConfirmEmail(gomock.Any(), "revoked-token").
+					Return(auth.ErrRevokedToken)
+			},
+
+			wantStatus:  http.StatusBadRequest,
+			wantCode:    "verification_token_revoked",
+			wantMessage: "verification token has revoked",
+		},
+		{
+			name: "internal error",
+			url:  "/auth/verify-email?token=raw-verification-token",
+
+			prepare: func(authService *mocks.MockAuthService) {
+				authService.EXPECT().
+					ConfirmEmail(gomock.Any(), "raw-verification-token").
+					Return(serviceErr)
+			},
+
+			wantStatus:  http.StatusInternalServerError,
+			wantCode:    "internal_error",
+			wantMessage: "internal server error",
+		},
+		{
+			name: "token with URL encoding",
+			url:  "/auth/verify-email?token=token%2Bwith%2Fspecial%3Dchars",
+
+			prepare: func(authService *mocks.MockAuthService) {
+				authService.EXPECT().
+					ConfirmEmail(gomock.Any(), "token+with/special=chars").
+					Return(nil)
+			},
+
+			wantStatus:   http.StatusOK,
+			wantResponse: "email_verified",
+		},
+		{
+			name: "token with additional query parameters",
+			url:  "/auth/verify-email?token=raw-verification-token&source=email",
+
+			prepare: func(authService *mocks.MockAuthService) {
+				authService.EXPECT().
+					ConfirmEmail(gomock.Any(), "raw-verification-token").
+					Return(nil)
+			},
+
+			wantStatus:   http.StatusOK,
+			wantResponse: "email_verified",
+		},
+		{
+			name: "first token is used when multiple tokens provided",
+			url:  "/auth/verify-email?token=first-token&token=second-token",
+
+			prepare: func(authService *mocks.MockAuthService) {
+				authService.EXPECT().
+					ConfirmEmail(gomock.Any(), "first-token").
+					Return(nil)
+			},
+
+			wantStatus:   http.StatusOK,
+			wantResponse: "email_verified",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+
+			authService := mocks.NewMockAuthService(ctrl)
+			userService := mocks.NewMockUserService(ctrl)
+
+			if tt.prepare != nil {
+				tt.prepare(authService)
+			}
+
+			api := httpapi.New(
+				zap.NewNop(),
+				authService,
+				userService,
+			)
+
+			req := httptest.NewRequest(
+				http.MethodGet,
+				tt.url,
+				nil,
+			)
+
+			rec := httptest.NewRecorder()
+
+			api.Handler().ServeHTTP(rec, req)
+
+			// Ошибочные ответы проверяем через общий helper.
+			if tt.wantStatus != http.StatusOK {
+				assertErrorResponse(
+					t,
+					rec,
+					tt.wantStatus,
+					tt.wantCode,
+					tt.wantMessage,
+				)
+
+				return
+			}
+
+			// Проверяем статус успешного ответа.
+			if rec.Code != http.StatusOK {
+				t.Fatalf(
+					"status = %d, want %d; body = %s",
+					rec.Code,
+					http.StatusOK,
+					rec.Body.String(),
+				)
+			}
+
+			// Проверяем Content-Type.
+			if contentType := rec.Header().Get("Content-Type"); contentType != "application/json" {
+				t.Errorf(
+					"Content-Type = %q, want %q",
+					contentType,
+					"application/json",
+				)
+			}
+
+			// Проверяем JSON-ответ.
+			var response struct {
+				Status string `json:"status"`
+			}
+
+			if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+				t.Fatalf(
+					"unmarshal success response: %v; body = %s",
+					err,
+					rec.Body.String(),
+				)
+			}
+
+			if response.Status != tt.wantResponse {
+				t.Errorf(
+					"status = %q, want %q",
+					response.Status,
+					tt.wantResponse,
+				)
+			}
+		})
 	}
 }
 
 func TestAPI_VerifyEmail_MethodNotAllowed(t *testing.T) {
-	ctrl := gomock.NewController(t)
-
-	authService := mocks.NewMockAuthService(ctrl)
-	userService := mocks.NewMockUserService(ctrl)
-	accessTokenVerifier := mocks.NewMockAccessTokenVerifier(ctrl)
-
-	api := httpapi.New(zap.NewNop(), accessTokenVerifier, authService, userService)
-
-	req := httptest.NewRequest(
-		http.MethodPost,
-		"/auth/verify-email?token=raw-verification-token",
-		nil,
-	)
-
-	rec := httptest.NewRecorder()
-
-	api.Handler().ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusMethodNotAllowed {
-		t.Fatalf("expected status %d, got %d", http.StatusMethodNotAllowed, rec.Code)
+	tests := []struct {
+		name   string
+		method string
+	}{
+		{
+			name:   "POST",
+			method: http.MethodPost,
+		},
+		{
+			name:   "PUT",
+			method: http.MethodPut,
+		},
+		{
+			name:   "PATCH",
+			method: http.MethodPatch,
+		},
+		{
+			name:   "DELETE",
+			method: http.MethodDelete,
+		},
 	}
-}
 
-func TestAPI_VerifyEmail_RevokedToken(t *testing.T) {
-	ctrl := gomock.NewController(t)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
 
-	authService := mocks.NewMockAuthService(ctrl)
-	userService := mocks.NewMockUserService(ctrl)
-	accessTokenVerifier := mocks.NewMockAccessTokenVerifier(ctrl)
+			authService := mocks.NewMockAuthService(ctrl)
+			userService := mocks.NewMockUserService(ctrl)
 
-	authService.EXPECT().ConfirmEmail(gomock.Any(), "revoked-token").Return(auth.ErrRevokedToken)
+			api := httpapi.New(
+				zap.NewNop(),
+				authService,
+				userService,
+			)
 
-	api := httpapi.New(zap.NewNop(), accessTokenVerifier, authService, userService)
+			req := httptest.NewRequest(
+				tt.method,
+				"/auth/verify-email?token=raw-verification-token",
+				nil,
+			)
 
-	req := httptest.NewRequest(
-		http.MethodGet,
-		"/auth/verify-email?token=revoked-token",
-		nil,
-	)
+			rec := httptest.NewRecorder()
 
-	rec := httptest.NewRecorder()
+			api.Handler().ServeHTTP(rec, req)
 
-	api.Handler().ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, rec.Code)
+			if rec.Code != http.StatusMethodNotAllowed {
+				t.Fatalf(
+					"status = %d, want %d; body = %s",
+					rec.Code,
+					http.StatusMethodNotAllowed,
+					rec.Body.String(),
+				)
+			}
+		})
 	}
 }

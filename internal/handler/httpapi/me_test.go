@@ -1,7 +1,7 @@
 package httpapi_test
 
 import (
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -11,7 +11,7 @@ import (
 
 	"github.com/frimo-dev/frimo-messenger/internal/handler/httpapi"
 	"github.com/frimo-dev/frimo-messenger/internal/handler/httpapi/mocks"
-	"github.com/frimo-dev/frimo-messenger/internal/security/token"
+	"github.com/frimo-dev/frimo-messenger/internal/service/auth"
 	"github.com/frimo-dev/frimo-messenger/internal/service/user"
 	"go.uber.org/mock/gomock"
 	"go.uber.org/zap"
@@ -19,6 +19,12 @@ import (
 
 func TestAPI_Me(t *testing.T) {
 	userID := uuid.New()
+	sessionID := uuid.New()
+
+	identity := auth.Identity{
+		UserID:    userID,
+		SessionID: sessionID,
+	}
 
 	createdAt := time.Date(
 		2026,
@@ -31,47 +37,47 @@ func TestAPI_Me(t *testing.T) {
 		time.UTC,
 	)
 
-	serviceErr := errors.New("service failed")
+	serviceErr := errors.New("user service failed")
+	authErr := errors.New("authentication service failed")
 
 	tests := []struct {
 		name          string
 		authorization string
 
 		prepare func(
-			verifier *mocks.MockAccessTokenVerifier,
+			authService *mocks.MockAuthService,
 			userService *mocks.MockUserService,
 		)
 
-		wantStatus int
-		wantUser   *user.User
+		wantStatus  int
+		wantUser    *user.User
+		wantCode    string
+		wantMessage string
 	}{
 		{
 			name:          "success",
 			authorization: "Bearer access-token",
 
 			prepare: func(
-				verifier *mocks.MockAccessTokenVerifier,
+				authService *mocks.MockAuthService,
 				userService *mocks.MockUserService,
 			) {
-				verifier.
-					EXPECT().
-					Verify("access-token").
-					Return(userID, nil)
+				gomock.InOrder(
+					authService.EXPECT().
+						Authenticate(gomock.Any(), "access-token").
+						Return(identity, nil),
 
-				userService.
-					EXPECT().
-					GetUserByID(
-						gomock.Any(),
-						userID,
-					).
-					Return(
-						user.User{
-							ID:        userID,
-							Email:     "test@example.com",
-							CreatedAt: createdAt,
-						},
-						nil,
-					)
+					userService.EXPECT().
+						GetUserByID(gomock.Any(), userID).
+						Return(
+							user.User{
+								ID:        userID,
+								Email:     "test@example.com",
+								CreatedAt: createdAt,
+							},
+							nil,
+						),
+				)
 			},
 
 			wantStatus: http.StatusOK,
@@ -86,96 +92,161 @@ func TestAPI_Me(t *testing.T) {
 			authorization: "Bearer access-token",
 
 			prepare: func(
-				verifier *mocks.MockAccessTokenVerifier,
+				authService *mocks.MockAuthService,
 				userService *mocks.MockUserService,
 			) {
-				verifier.
-					EXPECT().
-					Verify("access-token").
-					Return(userID, nil)
+				gomock.InOrder(
+					authService.EXPECT().
+						Authenticate(gomock.Any(), "access-token").
+						Return(identity, nil),
 
-				userService.
-					EXPECT().
-					GetUserByID(
-						gomock.Any(),
-						userID,
-					).
-					Return(
-						user.User{},
-						user.ErrUserNotFound,
-					)
+					userService.EXPECT().
+						GetUserByID(gomock.Any(), userID).
+						Return(user.User{}, user.ErrUserNotFound),
+				)
 			},
 
-			wantStatus: http.StatusUnauthorized,
+			wantStatus:  http.StatusUnauthorized,
+			wantCode:    "authentication_error",
+			wantMessage: "authentication failed",
 		},
 		{
 			name:          "user service error",
 			authorization: "Bearer access-token",
 
 			prepare: func(
-				verifier *mocks.MockAccessTokenVerifier,
+				authService *mocks.MockAuthService,
 				userService *mocks.MockUserService,
 			) {
-				verifier.
-					EXPECT().
-					Verify("access-token").
-					Return(userID, nil)
+				gomock.InOrder(
+					authService.EXPECT().
+						Authenticate(gomock.Any(), "access-token").
+						Return(identity, nil),
 
-				userService.
-					EXPECT().
-					GetUserByID(
-						gomock.Any(),
-						userID,
-					).
-					Return(
-						user.User{},
-						serviceErr,
-					)
+					userService.EXPECT().
+						GetUserByID(gomock.Any(), userID).
+						Return(user.User{}, serviceErr),
+				)
 			},
 
-			wantStatus: http.StatusInternalServerError,
+			wantStatus:  http.StatusInternalServerError,
+			wantCode:    "internal_error",
+			wantMessage: "internal server error",
 		},
 		{
-			name:       "missing authorization",
-			wantStatus: http.StatusUnauthorized,
+			name: "missing authorization",
+
+			wantStatus:  http.StatusUnauthorized,
+			wantCode:    "authentication_error",
+			wantMessage: "authentication failed",
 		},
 		{
-			name:          "invalid token",
+			name:          "invalid authorization scheme",
+			authorization: "Basic access-token",
+
+			wantStatus:  http.StatusUnauthorized,
+			wantCode:    "authentication_error",
+			wantMessage: "authentication failed",
+		},
+		{
+			name:          "empty bearer token",
+			authorization: "Bearer ",
+
+			wantStatus:  http.StatusUnauthorized,
+			wantCode:    "authentication_error",
+			wantMessage: "authentication failed",
+		},
+		{
+			name:          "malformed authorization",
+			authorization: "Bearer token extra",
+
+			wantStatus:  http.StatusUnauthorized,
+			wantCode:    "authentication_error",
+			wantMessage: "authentication failed",
+		},
+		{
+			name:          "invalid access token",
 			authorization: "Bearer invalid-token",
 
 			prepare: func(
-				verifier *mocks.MockAccessTokenVerifier,
+				authService *mocks.MockAuthService,
 				_ *mocks.MockUserService,
 			) {
-				verifier.
-					EXPECT().
-					Verify("invalid-token").
-					Return(
-						uuid.Nil(),
-						token.ErrInvalidToken,
-					)
+				authService.EXPECT().
+					Authenticate(gomock.Any(), "invalid-token").
+					Return(auth.Identity{}, auth.ErrAccessTokenInvalid)
 			},
 
-			wantStatus: http.StatusUnauthorized,
+			wantStatus:  http.StatusUnauthorized,
+			wantCode:    "authentication_error",
+			wantMessage: "authentication failed",
 		},
 		{
-			name:          "expired token",
-			authorization: "Bearer expired-token",
+			name:          "inactive session",
+			authorization: "Bearer inactive-token",
 
 			prepare: func(
-				verifier *mocks.MockAccessTokenVerifier,
+				authService *mocks.MockAuthService,
 				_ *mocks.MockUserService,
 			) {
-				verifier.
-					EXPECT().
-					Verify("expired-token").
-					Return(
-						uuid.Nil(),
-						token.ErrTokenExpired,
-					)
+				authService.EXPECT().
+					Authenticate(gomock.Any(), "inactive-token").
+					Return(auth.Identity{}, auth.ErrSessionInactive)
 			},
 
-			wantStatus: http.StatusUnauthorized,
+			wantStatus:  http.StatusUnauthorized,
+			wantCode:    "authentication_error",
+			wantMessage: "authentication failed",
+		},
+		{
+			name:          "authentication service error",
+			authorization: "Bearer access-token",
+
+			prepare: func(
+				authService *mocks.MockAuthService,
+				_ *mocks.MockUserService,
+			) {
+				authService.EXPECT().
+					Authenticate(gomock.Any(), "access-token").
+					Return(auth.Identity{}, authErr)
+			},
+
+			wantStatus:  http.StatusInternalServerError,
+			wantCode:    "internal_error",
+			wantMessage: "internal server error",
+		},
+		{
+			name:          "case insensitive bearer scheme",
+			authorization: "bEaReR access-token",
+
+			prepare: func(
+				authService *mocks.MockAuthService,
+				userService *mocks.MockUserService,
+			) {
+				gomock.InOrder(
+					authService.EXPECT().
+						Authenticate(gomock.Any(), "access-token").
+						Return(identity, nil),
+
+					userService.EXPECT().
+						GetUserByID(gomock.Any(), userID).
+						Return(
+							user.User{
+								ID:        userID,
+								Email:     "test@example.com",
+								CreatedAt: createdAt,
+							},
+							nil,
+						),
+				)
+			},
+
+			wantStatus: http.StatusOK,
+			wantUser: &user.User{
+				ID:        userID,
+				Email:     "test@example.com",
+				CreatedAt: createdAt,
+			},
 		},
 	}
 
@@ -183,20 +254,15 @@ func TestAPI_Me(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			ctrl := gomock.NewController(t)
 
-			verifier := mocks.NewMockAccessTokenVerifier(ctrl)
 			authService := mocks.NewMockAuthService(ctrl)
 			userService := mocks.NewMockUserService(ctrl)
 
 			if tt.prepare != nil {
-				tt.prepare(
-					verifier,
-					userService,
-				)
+				tt.prepare(authService, userService)
 			}
 
 			api := httpapi.New(
 				zap.NewNop(),
-				verifier,
 				authService,
 				userService,
 			)
@@ -208,70 +274,139 @@ func TestAPI_Me(t *testing.T) {
 			)
 
 			if tt.authorization != "" {
-				req.Header.Set(
-					"Authorization",
-					tt.authorization,
-				)
+				req.Header.Set("Authorization", tt.authorization)
 			}
 
 			rec := httptest.NewRecorder()
 
-			api.Handler().ServeHTTP(
-				rec,
-				req,
-			)
+			api.Handler().ServeHTTP(rec, req)
 
-			if rec.Code != tt.wantStatus {
-				t.Fatalf(
-					"expected status %d, got %d",
+			// Ошибочные ответы проверяем через общий helper.
+			if tt.wantStatus != http.StatusOK {
+				assertErrorResponse(
+					t,
+					rec,
 					tt.wantStatus,
-					rec.Code,
+					tt.wantCode,
+					tt.wantMessage,
 				)
-			}
 
-			if tt.wantUser == nil {
 				return
 			}
 
+			// Проверяем статус успешного ответа.
+			if rec.Code != http.StatusOK {
+				t.Fatalf(
+					"status = %d, want %d; body = %s",
+					rec.Code,
+					http.StatusOK,
+					rec.Body.String(),
+				)
+			}
+
+			// Проверяем Content-Type.
+			if contentType := rec.Header().Get("Content-Type"); contentType != "application/json" {
+				t.Errorf(
+					"Content-Type = %q, want %q",
+					contentType,
+					"application/json",
+				)
+			}
+
+			// Проверяем данные пользователя.
 			var response struct {
 				ID        uuid.UUID `json:"id"`
 				Email     string    `json:"email"`
 				CreatedAt time.Time `json:"created_at"`
 			}
 
-			if err := json.Unmarshal(
-				rec.Body.Bytes(),
-				&response,
-			); err != nil {
+			if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
 				t.Fatalf(
-					"unmarshal response: %v",
+					"unmarshal response: %v; body = %s",
 					err,
+					rec.Body.String(),
 				)
 			}
 
 			if response.ID != tt.wantUser.ID {
 				t.Errorf(
-					"expected ID %v, got %v",
-					tt.wantUser.ID,
+					"ID = %v, want %v",
 					response.ID,
+					tt.wantUser.ID,
 				)
 			}
 
 			if response.Email != tt.wantUser.Email {
 				t.Errorf(
-					"expected email %q, got %q",
-					tt.wantUser.Email,
+					"Email = %q, want %q",
 					response.Email,
+					tt.wantUser.Email,
 				)
 			}
 
-			if !response.CreatedAt.Equal(
-				tt.wantUser.CreatedAt,
-			) {
+			if !response.CreatedAt.Equal(tt.wantUser.CreatedAt) {
 				t.Errorf(
-					"expected created at %v, got %v",
-					tt.wantUser.CreatedAt,
+					"CreatedAt = %v, want %v",
 					response.CreatedAt,
+					tt.wantUser.CreatedAt,
+				)
+			}
+		})
+	}
+}
+
+func TestAPI_Me_MethodNotAllowed(t *testing.T) {
+	tests := []struct {
+		name   string
+		method string
+	}{
+		{
+			name:   "POST",
+			method: http.MethodPost,
+		},
+		{
+			name:   "PUT",
+			method: http.MethodPut,
+		},
+		{
+			name:   "PATCH",
+			method: http.MethodPatch,
+		},
+		{
+			name:   "DELETE",
+			method: http.MethodDelete,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+
+			authService := mocks.NewMockAuthService(ctrl)
+			userService := mocks.NewMockUserService(ctrl)
+
+			api := httpapi.New(
+				zap.NewNop(),
+				authService,
+				userService,
+			)
+
+			req := httptest.NewRequest(
+				tt.method,
+				"/me",
+				nil,
+			)
+
+			rec := httptest.NewRecorder()
+
+			api.Handler().ServeHTTP(rec, req)
+
+			if rec.Code != http.StatusMethodNotAllowed {
+				t.Fatalf(
+					"status = %d, want %d; body = %s",
+					rec.Code,
+					http.StatusMethodNotAllowed,
+					rec.Body.String(),
 				)
 			}
 		})

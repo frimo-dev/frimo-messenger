@@ -8,6 +8,6 @@ type healthResponse struct {
 	Status string `json:"status"`
 }
 
-func (a *API) health(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, healthResponse{Status: "ok"})
+func (a *API) health(w http.ResponseWriter, r *http.Request) {
+	a.respondJSON(r.Context(), w, http.StatusOK, healthResponse{Status: "ok"})
 }
