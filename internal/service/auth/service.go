@@ -141,7 +141,7 @@ func (s *Service) Authenticate(ctx context.Context, rawAccessToken string) (Iden
 
 	now := s.now()
 
-	isActive = sessionState.RevokedAt == nil
+	isActive = sessionState.RevokedAt == nil && sessionState.ExpiresAt.After(now)
 
 	ttl := 5 * time.Minute
 	if isActive {
