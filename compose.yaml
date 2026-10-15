@@ -1,6 +1,7 @@
 services:
   nginx:
     image: nginx:alpine
+    container_name: messenger-nginx
     ports:
       - "80:80"
     volumes:
@@ -58,8 +59,62 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+  scylla:
+    image: scylladb/scylla:6.2
+    restart: unless-stopped
+    container_name: messenger-scylla
+    command: --smp 1 --memory 1G --authenticator PasswordAuthenticator --authorizer CassandraAuthorizer
+    ports:
+      - "127.0.0.1:9042:9042"
+    volumes:
+      - scylla_data:/var/lib/scylla
+    healthcheck:
+      test: [ "CMD-SHELL", "nodetool status | grep -q '^UN'" ]
+      interval: 10s
+      timeout: 10s
+      retries: 20
+      start_period: 30s
+  scylla-init:
+    image: scylladb/scylla:6.2
+    container_name: scylla-init
+    entrypoint:
+      - /bin/bash
+      - /bootstrap/set-password.sh
+    environment:
+      SCYLLA_PASSWORD: ${SCYLLA_PASSWORD:?SCYLLA_PASSWORD is required}
+      SCYLLA_KEYSPACE: ${SCYLLA_KEYSPACE:?SCYLLA_KEYSPACE is required}
+    volumes:
+      - ./deploy/scylla/set-password.sh:/bootstrap/set-password.sh:ro
+    depends_on:
+      scylla:
+        condition: service_healthy
+    restart: "no"
+  scylla-migrate:
+    image: migrate/migrate:v4.19.1
+    profiles:
+      - tools
+    env_file:
+      - .env
+    volumes:
+      - ./migrations/scylla:/migrations:ro
+    entrypoint:
+      - /bin/sh
+      - -ec
+      - |
+        exec migrate \
+          -path=/migrations \
+          -database="cassandra://scylla:9042/$${SCYLLA_KEYSPACE}?username=$${SCYLLA_USERNAME}&password=$${SCYLLA_PASSWORD}&x-multi-statement=true" \
+          "$$@"
+      - --
+    command:
+      - up
+    depends_on:
+      scylla-init:
+        condition: service_completed_successfully
+    restart: "no"
   redis:
     image: redis:8.10.2-alpine
+    container_name: messenger-redis
     ports:
       - "${REDIS_ADDR}:6379"
     command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD}"]
@@ -80,11 +135,12 @@ services:
       - ./migrations:/migrations:ro
     entrypoint:
       - migrate
-      - -path=/migrations
+      - -path=/migrations/postgres
       - -database=postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable
     depends_on:
       postgres:
         condition: service_healthy
 volumes:
   postgres_data:
+  scylla_data:
   redis_data:

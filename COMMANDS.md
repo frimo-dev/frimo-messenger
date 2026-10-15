@@ -167,7 +167,7 @@ docker compose \
 docker compose \
   -f compose.yaml \
   -f compose.dev.yaml \
-  up -d postgres nginx redis
+  up -d postgres nginx redis scylla
 ```
 
 Запускаются только `postgres` и `nginx`. API и Worker запускаются из IDE.

@@ -1,0 +1,3 @@
+DROP TABLE IF EXISTS topics;
+
+DROP TYPE IF EXISTS topic_type;
