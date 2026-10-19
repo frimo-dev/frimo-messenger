@@ -21,6 +21,7 @@ type AuthService interface {
 
 type UserService interface {
 	GetUserByID(ctx context.Context, userID uuid.UUID) (user.User, error)
+	GetPublicUserByUsername(ctx context.Context, username string) (user.PublicUser, error)
 }
 
 type API struct {
@@ -64,4 +65,6 @@ func (a *API) registerRoutes() {
 	a.mux.HandleFunc("GET /auth/refresh", a.refresh)
 
 	a.mux.Handle("GET /me", AuthenticationMiddleware(a.logger, a.authService, http.HandlerFunc(a.me)))
+
+	a.mux.Handle("GET /users/by-username/{username}", AuthenticationMiddleware(a.logger, a.authService, http.HandlerFunc(a.getUserByUsername)))
 }

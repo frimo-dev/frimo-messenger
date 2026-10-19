@@ -40,3 +40,25 @@ func (r *UserRepository) GetUserByID(ctx context.Context, userID uuid.UUID) (use
 
 	return u, nil
 }
+
+func (r *UserRepository) GetPublicUserByUsername(ctx context.Context, username string) (user.PublicUser, error) {
+	const query = `
+		SELECT id, name, surname
+		FROM users
+		WHERE username = $1;
+	`
+
+	var publicUser user.PublicUser
+	publicUser.Username = username
+
+	err := r.pool.QueryRow(ctx, query, username).Scan(&publicUser.ID, &publicUser.Name, &publicUser.Surname)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return user.PublicUser{}, user.ErrUserNotFound
+		}
+
+		return user.PublicUser{}, fmt.Errorf("failed to get user by username: %w", err)
+	}
+
+	return publicUser, nil
+}

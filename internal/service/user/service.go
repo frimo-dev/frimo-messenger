@@ -16,6 +16,13 @@ type User struct {
 	CreatedAt time.Time
 }
 
+type PublicUser struct {
+	ID       uuid.UUID
+	Username string
+	Name     string
+	Surname  *string
+}
+
 type Service struct {
 	repository Repository
 }
@@ -29,5 +36,14 @@ func (s *Service) GetUserByID(ctx context.Context, userID uuid.UUID) (User, erro
 	if err != nil {
 		return User{}, fmt.Errorf("failed to get user by ID: %w", err)
 	}
+	return user, nil
+}
+
+func (s *Service) GetPublicUserByUsername(ctx context.Context, username string) (PublicUser, error) {
+	user, err := s.repository.GetPublicUserByUsername(ctx, username)
+	if err != nil {
+		return PublicUser{}, fmt.Errorf("get public user by username: %w", err)
+	}
+
 	return user, nil
 }
