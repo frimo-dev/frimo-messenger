@@ -5,11 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net/mail"
 	"net/netip"
 	"strings"
 	"time"
-	"unicode/utf8"
 	"uuid"
 
 	"github.com/frimo-dev/frimo-messenger/internal/dto"
@@ -39,6 +37,9 @@ type User struct {
 type RegistrationInput struct {
 	Email    string
 	Password string
+	Name     string
+	Surname  string
+	Username string
 }
 
 type LoginInput struct {
@@ -329,6 +330,22 @@ func (s *Service) Register(ctx context.Context, input RegistrationInput) (User, 
 		return User{}, err
 	}
 
+	isGeneratedUsername := input.Username == ""
+
+	if !isGeneratedUsername {
+		if err := validateUsername(input.Username); err != nil {
+			return User{}, err
+		}
+	}
+
+	if err := validateName(input.Name); err != nil {
+		return User{}, err
+	}
+
+	if err := validateSurname(input.Surname); err != nil {
+		return User{}, err
+	}
+
 	passwordHash, err := s.passwordManager.Hash(input.Password)
 	if err != nil {
 		return User{}, fmt.Errorf("hash password: %w", err)
@@ -342,24 +359,42 @@ func (s *Service) Register(ctx context.Context, input RegistrationInput) (User, 
 		return User{}, err
 	}
 
-	createdUser, err := s.repository.CreateUser(
-		ctx,
-		CreateUserInput{
-			ID:           userID,
-			Email:        email,
-			PasswordHash: passwordHash,
-			CreatedAt:    now,
+	const maxAttempts = 5
 
-			Verification: verificationInput,
+	for range maxAttempts {
+		if isGeneratedUsername {
+			input.Username, err = generateUsername()
+			if err != nil {
+				return User{}, fmt.Errorf("generate username: %w", err)
+			}
+		}
 
-			OutboxEvent: outboxEvent,
-		},
-	)
-	if err != nil {
-		return User{}, err
+		createdUser, err := s.repository.CreateUser(
+			ctx,
+			CreateUserInput{
+				ID:           userID,
+				Email:        email,
+				Name:         input.Name,
+				Surname:      input.Surname,
+				Username:     input.Username,
+				PasswordHash: passwordHash,
+				CreatedAt:    now,
+
+				Verification: verificationInput,
+				OutboxEvent:  outboxEvent,
+			},
+		)
+
+		if err == nil {
+			return createdUser, nil
+		}
+
+		if !errors.Is(err, ErrUsernameAlreadyExists) || !isGeneratedUsername {
+			return User{}, err
+		}
 	}
 
-	return createdUser, nil
+	return User{}, ErrUsernameGenerationExhausted
 }
 
 func (s *Service) ConfirmEmail(ctx context.Context, rawToken string) error {
@@ -451,97 +486,4 @@ func (s *Service) prepareEmailVerification(email string, now time.Time) (Verific
 	}
 
 	return verification, event, nil
-}
-
-func normalizeEmail(email string) string {
-	return strings.ToLower(strings.TrimSpace(email))
-}
-
-func validateEmail(email string) error {
-	if email == "" {
-		return &ValidationError{
-			Code:    "email_required",
-			Field:   "email",
-			Message: "email is required",
-		}
-	}
-
-	if len(email) > 254 {
-		return &ValidationError{
-			Code:    "email_too_long",
-			Field:   "email",
-			Message: "email is too long",
-		}
-	}
-
-	address, err := mail.ParseAddress(email)
-	if err != nil || address.Address != email {
-		return &ValidationError{
-			Code:    "invalid_email",
-			Field:   "email",
-			Message: "email has invalid format",
-		}
-	}
-
-	return nil
-}
-
-func validatePassword(password string) error {
-	if password == "" {
-		return &ValidationError{
-			Code:    "password_required",
-			Field:   "password",
-			Message: "password is required",
-		}
-	}
-
-	length := utf8.RuneCountInString(password)
-
-	if length < 12 {
-		return &ValidationError{
-			Code:    "password_too_short",
-			Field:   "password",
-			Message: "password must contain at least 12 characters",
-		}
-	}
-
-	if length > 128 {
-		return &ValidationError{
-			Code:    "password_too_long",
-			Field:   "password",
-			Message: "password must contain at most 128 characters",
-		}
-	}
-
-	return nil
-}
-
-func validateDeviceName(deviceName string) error {
-	if deviceName == "" {
-		return &ValidationError{
-			Code:    "device_name_required",
-			Field:   "device_name",
-			Message: "device name is required",
-		}
-	}
-
-	length := utf8.RuneCountInString(deviceName)
-
-	if length < 3 {
-		return &ValidationError{
-			Code:    "device_name_too_short",
-			Field:   "device_name",
-			Message: "device name must contain at least 3 characters",
-		}
-	}
-
-	if length > 64 {
-		return &ValidationError{
-			Code:    "device_name_too_long",
-			Field:   "device_name",
-			Message: "device name must contain at most 64 characters",
-		}
-	}
-
-	return nil
 }

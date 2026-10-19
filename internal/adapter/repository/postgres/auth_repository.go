@@ -58,25 +58,27 @@ func (r *AuthRepository) CreateUser(ctx context.Context, input auth.CreateUserIn
 		INSERT INTO users (
 		    id,
 		    email,
+		    username,
+		    name,
+		    surname,
 		    password_hash,
 		    created_at
 		)
-		VALUES ($1, $2, $3, $4)`
+		VALUES ($1, $2, $3, $4, $5, $6, $7)`
 
 	_, err = tx.Exec(
 		ctx,
 		query,
 		input.ID,
 		input.Email,
+		input.Username,
+		input.Name,
+		input.Surname,
 		input.PasswordHash,
 		input.CreatedAt,
 	)
 	if err != nil {
-		if isEmailUniqueViolation(err) {
-			return auth.User{}, auth.ErrEmailAlreadyExists
-		}
-
-		return auth.User{}, fmt.Errorf("insert user: %w", err)
+		return auth.User{}, fmt.Errorf("insert user: %w", mapCreateUserError(err))
 	}
 
 	const insertVerificationQuery = `
@@ -403,15 +405,27 @@ func (r *AuthRepository) GetForDelivery(ctx context.Context, verificationID uuid
 	return data, nil
 }
 
-func isEmailUniqueViolation(err error) bool {
-	var postgresError *pgconn.PgError
+func mapCreateUserError(err error) error {
+	var pgErr *pgconn.PgError
 
-	if !errors.As(err, &postgresError) {
-		return false
+	if !errors.As(err, &pgErr) {
+		return err
 	}
 
-	return postgresError.Code == uniqueViolationCode &&
-		postgresError.ConstraintName == "users_email_unique_idx"
+	if pgErr.Code != uniqueViolationCode {
+		return err
+	}
+
+	switch pgErr.ConstraintName {
+	case "users_email_unique_idx":
+		return auth.ErrEmailAlreadyExists
+
+	case "users_username_key":
+		return auth.ErrUsernameAlreadyExists
+
+	default:
+		return err
+	}
 }
 
 var _ auth.Repository = (*AuthRepository)(nil)

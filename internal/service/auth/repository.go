@@ -19,6 +19,9 @@ type VerificationInput struct {
 type CreateUserInput struct {
 	ID           uuid.UUID
 	Email        string
+	Name         string
+	Surname      string
+	Username     string
 	PasswordHash string
 	CreatedAt    time.Time
 

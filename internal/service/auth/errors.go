@@ -17,7 +17,7 @@ var (
 	ErrUsedToken    = errors.New("verification token already used")
 	ErrRevokedToken = errors.New("verification token is revoked")
 
-	ErrAccessTokenInvalid   = errors.New("invalid access token")
+	ErrAccessTokenInvalid = errors.New("invalid access token")
 
 	ErrSessionNotFound  = errors.New("session not found")
 	ErrSessionCacheMiss = errors.New("session cache miss")
@@ -29,6 +29,9 @@ var (
 
 	ErrRefreshResultNotFound   = errors.New("refresh result not found")
 	ErrRefreshRetryUnavailable = errors.New("refresh retry expired")
+
+	ErrUsernameAlreadyExists       = errors.New("username already exists")
+	ErrUsernameGenerationExhausted = errors.New("attempts to generate username is end")
 )
 
 type ValidationError struct {

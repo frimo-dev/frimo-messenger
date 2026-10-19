@@ -14,16 +14,19 @@ const maxRegisterBodySize = 16 * 1024
 type registerRequest struct {
 	Email    string `json:"email"`
 	Password string `json:"password"`
+	Name     string `json:"name"`
+	Surname  string `json:"surname"`
+	Username string `json:"username"`
 }
 
 func (r registerRequest) Validate() error {
 	switch {
 	case r.Email == "":
-		return errors.New("operation_id is required")
-
+		return errors.New("email is required")
 	case r.Password == "":
-		return errors.New("refresh_token is required")
-
+		return errors.New("password is required")
+	case r.Name == "":
+		return errors.New("name is required")
 	default:
 		return nil
 	}
@@ -47,6 +50,9 @@ func (a *API) registerUser(w http.ResponseWriter, r *http.Request) {
 	createdUser, err := a.authService.Register(r.Context(), auth.RegistrationInput{
 		Email:    request.Email,
 		Password: request.Password,
+		Name:     request.Name,
+		Surname:  request.Surname,
+		Username: request.Username,
 	})
 	if err != nil {
 		var validationErr *auth.ValidationError
@@ -68,6 +74,14 @@ func (a *API) registerUser(w http.ResponseWriter, r *http.Request) {
 				http.StatusConflict,
 				"email_already_exists",
 				"user with this email already exists",
+			)
+		case errors.Is(err, auth.ErrUsernameAlreadyExists):
+			a.respondError(
+				r.Context(),
+				w,
+				http.StatusConflict,
+				"username_already_exists",
+				"user with this username already exists",
 			)
 
 		default:

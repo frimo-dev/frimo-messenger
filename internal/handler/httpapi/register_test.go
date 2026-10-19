@@ -22,11 +22,13 @@ func TestAPI_Register(t *testing.T) {
 	const (
 		validEmail    = "test@example.com"
 		validPassword = "very-secure-password"
+		validName     = "Alex"
 	)
 
 	validBody := `{
 		"email": "test@example.com",
-		"password": "very-secure-password"
+		"password": "very-secure-password",
+		"name": "Alex"
 	}`
 
 	internalErr := errors.New("database unavailable")
@@ -54,6 +56,7 @@ func TestAPI_Register(t *testing.T) {
 						auth.RegistrationInput{
 							Email:    validEmail,
 							Password: validPassword,
+							Name:     validName,
 						},
 					).
 					Return(
@@ -70,10 +73,125 @@ func TestAPI_Register(t *testing.T) {
 			wantEmail:  validEmail,
 		},
 		{
+			name: "success with empty username for automatic generation",
+			body: `{
+				"email": "test@example.com",
+				"password": "very-secure-password",
+				"name": "Alex",
+				"username": ""
+			}`,
+
+			prepare: func(authService *mocks.MockAuthService) {
+				authService.EXPECT().
+					Register(
+						gomock.Any(),
+						auth.RegistrationInput{
+							Email:    validEmail,
+							Password: validPassword,
+							Name:     validName,
+							Username: "",
+						},
+					).
+					Return(auth.User{ID: userID, Email: validEmail}, nil)
+			},
+
+			wantStatus: http.StatusAccepted,
+			wantID:     userID.String(),
+			wantEmail:  validEmail,
+		},
+		{
+			name: "success with provided username and surname",
+			body: `{
+				"email": "test@example.com",
+				"password": "very-secure-password",
+				"name": "Alex",
+				"surname": "Smith",
+				"username": "Alex2026"
+			}`,
+
+			prepare: func(authService *mocks.MockAuthService) {
+				authService.EXPECT().
+					Register(
+						gomock.Any(),
+						auth.RegistrationInput{
+							Email:    validEmail,
+							Password: validPassword,
+							Name:     validName,
+							Surname:  "Smith",
+							Username: "Alex2026",
+						},
+					).
+					Return(auth.User{ID: userID, Email: validEmail}, nil)
+			},
+
+			wantStatus: http.StatusAccepted,
+			wantID:     userID.String(),
+			wantEmail:  validEmail,
+		},
+		{
+			name: "username validation error",
+			body: `{
+				"email": "test@example.com",
+				"password": "very-secure-password",
+				"name": "Alex",
+				"username": "invalid.username"
+			}`,
+
+			prepare: func(authService *mocks.MockAuthService) {
+				authService.EXPECT().
+					Register(
+						gomock.Any(),
+						auth.RegistrationInput{
+							Email:    validEmail,
+							Password: validPassword,
+							Name:     validName,
+							Username: "invalid.username",
+						},
+					).
+					Return(auth.User{}, &auth.ValidationError{
+						Code:    "username_invalid_characters",
+						Field:   "username",
+						Message: "username may contain only English letters, digits, '-' and '_'",
+					})
+			},
+
+			wantStatus:  http.StatusBadRequest,
+			wantCode:    "username_invalid_characters",
+			wantMessage: "username may contain only English letters, digits, '-' and '_'",
+		},
+		{
+			name: "username already exists",
+			body: `{
+				"email": "test@example.com",
+				"password": "very-secure-password",
+				"name": "Alex",
+				"username": "Alex2026"
+			}`,
+
+			prepare: func(authService *mocks.MockAuthService) {
+				authService.EXPECT().
+					Register(
+						gomock.Any(),
+						auth.RegistrationInput{
+							Email:    validEmail,
+							Password: validPassword,
+							Name:     validName,
+							Username: "Alex2026",
+						},
+					).
+					Return(auth.User{}, auth.ErrUsernameAlreadyExists)
+			},
+
+			wantStatus:  http.StatusConflict,
+			wantCode:    "username_already_exists",
+			wantMessage: "user with this username already exists",
+		},
+		{
 			name: "validation error",
 			body: `{
 				"email": "not-an-email",
-				"password": "very-secure-password"
+				"password": "very-secure-password",
+				"name": "Alex"
 			}`,
 
 			prepare: func(authService *mocks.MockAuthService) {
@@ -83,6 +201,7 @@ func TestAPI_Register(t *testing.T) {
 						auth.RegistrationInput{
 							Email:    "not-an-email",
 							Password: validPassword,
+							Name:     validName,
 						},
 					).
 					Return(
@@ -110,6 +229,7 @@ func TestAPI_Register(t *testing.T) {
 						auth.RegistrationInput{
 							Email:    validEmail,
 							Password: validPassword,
+							Name:     validName,
 						},
 					).
 					Return(
@@ -133,6 +253,7 @@ func TestAPI_Register(t *testing.T) {
 						auth.RegistrationInput{
 							Email:    validEmail,
 							Password: validPassword,
+							Name:     validName,
 						},
 					).
 					Return(
@@ -219,6 +340,18 @@ func TestAPI_Register(t *testing.T) {
 			wantMessage: "invalid request body",
 		},
 		{
+			name: "invalid username field type",
+			body: `{
+				"email": "test@example.com",
+				"password": "very-secure-password",
+				"name": "Alex",
+				"username": 123
+			}`,
+			wantStatus:  http.StatusBadRequest,
+			wantCode:    "invalid_request",
+			wantMessage: "invalid request body",
+		},
+		{
 			name: "missing email",
 			body: `{
 				"password": "very-secure-password"
@@ -235,6 +368,27 @@ func TestAPI_Register(t *testing.T) {
 				"password": "very-secure-password"
 			}`,
 
+			wantStatus:  http.StatusBadRequest,
+			wantCode:    "invalid_request",
+			wantMessage: "invalid request body",
+		},
+		{
+			name: "missing name",
+			body: `{
+				"email": "test@example.com",
+				"password": "very-secure-password"
+			}`,
+			wantStatus:  http.StatusBadRequest,
+			wantCode:    "invalid_request",
+			wantMessage: "invalid request body",
+		},
+		{
+			name: "empty name",
+			body: `{
+				"email": "test@example.com",
+				"password": "very-secure-password",
+				"name": ""
+			}`,
 			wantStatus:  http.StatusBadRequest,
 			wantCode:    "invalid_request",
 			wantMessage: "invalid request body",

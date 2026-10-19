@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json/v2"
 	"errors"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -26,6 +27,8 @@ func TestService_Register_Success(t *testing.T) {
 
 	input := auth.RegistrationInput{
 		Email:    " Test@Example.COM ",
+		Name:     "Alex",
+		Surname:  "Smith",
 		Password: "very-secure-password",
 	}
 
@@ -106,6 +109,13 @@ func TestService_Register_Success(t *testing.T) {
 
 	if user != createdUser {
 		t.Errorf("expected user %+v, got %+v", createdUser, user)
+	}
+
+	// При пустом username сервис должен сгенерировать корректное имя.
+	assertGeneratedUsername(t, capturedInput.Username)
+
+	if capturedInput.Name != input.Name || capturedInput.Surname != input.Surname {
+		t.Errorf("expected name/surname %q/%q, got %q/%q", input.Name, input.Surname, capturedInput.Name, capturedInput.Surname)
 	}
 
 	if capturedInput.Email != "test@example.com" {
@@ -234,6 +244,7 @@ func TestService_Register_Errors(t *testing.T) {
 			name: "invalid email",
 			input: auth.RegistrationInput{
 				Email:    "not-an-email",
+				Name:     "Alex",
 				Password: "very-secure-password",
 			},
 			wantCode: "invalid_email",
@@ -242,6 +253,7 @@ func TestService_Register_Errors(t *testing.T) {
 			name: "password too short",
 			input: auth.RegistrationInput{
 				Email:    "correct@example.com",
+				Name:     "Alex",
 				Password: strings.Repeat("p", 11),
 			},
 			wantCode: "password_too_short",
@@ -250,14 +262,44 @@ func TestService_Register_Errors(t *testing.T) {
 			name: "password too long",
 			input: auth.RegistrationInput{
 				Email:    "correct@example.com",
+				Name:     "Alex",
 				Password: strings.Repeat("p", 129),
 			},
 			wantCode: "password_too_long",
 		},
 		{
+			name: "username too short",
+			input: auth.RegistrationInput{
+				Email: "correct@example.com", Username: "ab", Name: "Alex", Password: "correct-password",
+			},
+			wantCode: "username_too_short",
+		},
+		{
+			name: "username too long",
+			input: auth.RegistrationInput{
+				Email: "correct@example.com", Username: strings.Repeat("a", 21), Name: "Alex", Password: "correct-password",
+			},
+			wantCode: "username_too_long",
+		},
+		{
+			name: "username invalid characters",
+			input: auth.RegistrationInput{
+				Email: "correct@example.com", Username: "alex!", Name: "Alex", Password: "correct-password",
+			},
+			wantCode: "username_invalid_characters",
+		},
+		{
+			name: "username without English letters",
+			input: auth.RegistrationInput{
+				Email: "correct@example.com", Username: "123_-", Name: "Alex", Password: "correct-password",
+			},
+			wantCode: "username_letter_required",
+		},
+		{
 			name: "password hash error",
 			input: auth.RegistrationInput{
 				Email:    "correct@example.com",
+				Name:     "Alex",
 				Password: "correct-password",
 			},
 
@@ -278,6 +320,7 @@ func TestService_Register_Errors(t *testing.T) {
 			name: "token generation error",
 			input: auth.RegistrationInput{
 				Email:    "correct@example.com",
+				Name:     "Alex",
 				Password: "correct-password",
 			},
 
@@ -302,6 +345,7 @@ func TestService_Register_Errors(t *testing.T) {
 			name: "token encryption error",
 			input: auth.RegistrationInput{
 				Email:    "correct@example.com",
+				Name:     "Alex",
 				Password: "correct-password",
 			},
 
@@ -336,6 +380,7 @@ func TestService_Register_Errors(t *testing.T) {
 			name: "repository error",
 			input: auth.RegistrationInput{
 				Email:    "correct@example.com",
+				Name:     "Alex",
 				Password: "correct-password",
 			},
 
@@ -453,5 +498,236 @@ func TestService_Register_Errors(t *testing.T) {
 				)
 			}
 		})
+	}
+}
+
+// При пустом username сервис должен передать в репозиторий результат генерации.
+// Генерация криптографически случайна, поэтому проверяем формат, а не точное значение.
+func assertGeneratedUsername(t *testing.T, username string) {
+	t.Helper()
+
+	const pattern = `^user_[a-z0-9]{15}$`
+	if !regexp.MustCompile(pattern).MatchString(username) {
+		t.Errorf("generated username %q does not match %s", username, pattern)
+	}
+}
+
+func newRegisterTestService(
+	repository *mocks.MockRepository,
+	passwordManager *mocks.MockPasswordManager,
+	tokenGenerator *mocks.MockTokenGenerator,
+	tokenCipher *mocks.MockVerificationTokenCipher,
+) *auth.Service {
+	return auth.NewService(
+		repository,
+		nil, // SessionRepository
+		nil, // AccessTokenStorage
+		nil, // SessionStorage
+		nil, // RefreshResultStorage
+		nil, // Observer
+		passwordManager,
+		tokenGenerator,
+		tokenCipher,
+		time.Now,
+		30*time.Minute,  // verificationTokenLifetime
+		15*time.Minute,  // accessTokenLifetime
+		30*24*time.Hour, // sessionInactivityTimeout
+		time.Minute,     // refreshRetryTTL
+	)
+}
+
+// Все повторные попытки INSERT используют одни и те же заранее подготовленные
+// hash пароля, verification и outbox-event.
+func expectRegisterPreparation(
+	passwordManager *mocks.MockPasswordManager,
+	tokenGenerator *mocks.MockTokenGenerator,
+	tokenCipher *mocks.MockVerificationTokenCipher,
+) {
+	passwordManager.EXPECT().
+		Hash("correct-password").
+		Return("password-hash", nil)
+
+	tokenGenerator.EXPECT().
+		Generate().
+		Return("raw-token", []byte("token-hash"), nil)
+
+	tokenCipher.EXPECT().
+		Encrypt([]byte("raw-token"), gomock.Any()).
+		Return([]byte("encrypted-token"), nil)
+}
+
+func TestService_Register_ExplicitUsername(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	repository := mocks.NewMockRepository(ctrl)
+	passwordManager := mocks.NewMockPasswordManager(ctrl)
+	tokenGenerator := mocks.NewMockTokenGenerator(ctrl)
+	tokenCipher := mocks.NewMockVerificationTokenCipher(ctrl)
+
+	expectRegisterPreparation(passwordManager, tokenGenerator, tokenCipher)
+
+	createdUser := auth.User{Email: "correct@example.com"}
+	repository.EXPECT().
+		CreateUser(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ context.Context, input auth.CreateUserInput) (auth.User, error) {
+			if input.Username != "Alex_2026" {
+				t.Errorf("expected explicit username %q, got %q", "Alex_2026", input.Username)
+			}
+			return createdUser, nil
+		})
+
+	service := newRegisterTestService(repository, passwordManager, tokenGenerator, tokenCipher)
+	user, err := service.Register(context.Background(), auth.RegistrationInput{
+		Email:    "correct@example.com",
+		Username: "Alex_2026",
+		Name:     "Alex",
+		Password: "correct-password",
+	})
+	if err != nil {
+		t.Fatalf("Register() unexpected error: %v", err)
+	}
+	if user != createdUser {
+		t.Errorf("expected user %+v, got %+v", createdUser, user)
+	}
+}
+
+func TestService_Register_GeneratedUsernameCollision_Retries(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	repository := mocks.NewMockRepository(ctrl)
+	passwordManager := mocks.NewMockPasswordManager(ctrl)
+	tokenGenerator := mocks.NewMockTokenGenerator(ctrl)
+	tokenCipher := mocks.NewMockVerificationTokenCipher(ctrl)
+
+	expectRegisterPreparation(passwordManager, tokenGenerator, tokenCipher)
+
+	var attempts []auth.CreateUserInput
+	createdUser := auth.User{Email: "correct@example.com"}
+
+	repository.EXPECT().
+		CreateUser(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ context.Context, input auth.CreateUserInput) (auth.User, error) {
+			attempts = append(attempts, input)
+			return auth.User{}, auth.ErrUsernameAlreadyExists
+		})
+	repository.EXPECT().
+		CreateUser(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ context.Context, input auth.CreateUserInput) (auth.User, error) {
+			attempts = append(attempts, input)
+			return createdUser, nil
+		})
+
+	service := newRegisterTestService(repository, passwordManager, tokenGenerator, tokenCipher)
+	user, err := service.Register(context.Background(), auth.RegistrationInput{
+		Email:    "correct@example.com",
+		Name:     "Alex",
+		Password: "correct-password",
+	})
+	if err != nil {
+		t.Fatalf("Register() unexpected error: %v", err)
+	}
+	if user != createdUser {
+		t.Errorf("expected user %+v, got %+v", createdUser, user)
+	}
+	if len(attempts) != 2 {
+		t.Fatalf("expected 2 CreateUser calls, got %d", len(attempts))
+	}
+	for _, attempt := range attempts {
+		assertGeneratedUsername(t, attempt.Username)
+	}
+	if attempts[0].ID != attempts[1].ID ||
+		attempts[0].Verification.ID != attempts[1].Verification.ID ||
+		attempts[0].OutboxEvent.ID != attempts[1].OutboxEvent.ID {
+		t.Error("retries must reuse the prepared user, verification and outbox IDs")
+	}
+}
+
+func TestService_Register_GeneratedUsernameCollision_Exhausted(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	repository := mocks.NewMockRepository(ctrl)
+	passwordManager := mocks.NewMockPasswordManager(ctrl)
+	tokenGenerator := mocks.NewMockTokenGenerator(ctrl)
+	tokenCipher := mocks.NewMockVerificationTokenCipher(ctrl)
+
+	expectRegisterPreparation(passwordManager, tokenGenerator, tokenCipher)
+
+	repository.EXPECT().
+		CreateUser(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ context.Context, input auth.CreateUserInput) (auth.User, error) {
+			assertGeneratedUsername(t, input.Username)
+			return auth.User{}, auth.ErrUsernameAlreadyExists
+		}).
+		Times(5)
+
+	service := newRegisterTestService(repository, passwordManager, tokenGenerator, tokenCipher)
+	user, err := service.Register(context.Background(), auth.RegistrationInput{
+		Email:    "correct@example.com",
+		Name:     "Alex",
+		Password: "correct-password",
+	})
+	if user != (auth.User{}) {
+		t.Errorf("expected empty user, got %+v", user)
+	}
+	if !errors.Is(err, auth.ErrUsernameGenerationExhausted) {
+		t.Fatalf("expected ErrAttemptsIsEnd after 5 username collisions, got %v", err)
+	}
+}
+
+func TestService_Register_ExplicitUsernameCollision_DoesNotRetry(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	repository := mocks.NewMockRepository(ctrl)
+	passwordManager := mocks.NewMockPasswordManager(ctrl)
+	tokenGenerator := mocks.NewMockTokenGenerator(ctrl)
+	tokenCipher := mocks.NewMockVerificationTokenCipher(ctrl)
+
+	expectRegisterPreparation(passwordManager, tokenGenerator, tokenCipher)
+
+	repository.EXPECT().
+		CreateUser(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ context.Context, input auth.CreateUserInput) (auth.User, error) {
+			if input.Username != "Alex_2026" {
+				t.Errorf("expected explicit username to remain unchanged, got %q", input.Username)
+			}
+			return auth.User{}, auth.ErrUsernameAlreadyExists
+		})
+
+	service := newRegisterTestService(repository, passwordManager, tokenGenerator, tokenCipher)
+	user, err := service.Register(context.Background(), auth.RegistrationInput{
+		Email:    "correct@example.com",
+		Username: "Alex_2026",
+		Name:     "Alex",
+		Password: "correct-password",
+	})
+	if user != (auth.User{}) {
+		t.Errorf("expected empty user, got %+v", user)
+	}
+	if !errors.Is(err, auth.ErrUsernameAlreadyExists) {
+		t.Fatalf("expected ErrUsernameAlreadyExists, got %v", err)
+	}
+}
+
+func TestService_Register_GeneratedUsername_EmailConflictDoesNotRetry(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	repository := mocks.NewMockRepository(ctrl)
+	passwordManager := mocks.NewMockPasswordManager(ctrl)
+	tokenGenerator := mocks.NewMockTokenGenerator(ctrl)
+	tokenCipher := mocks.NewMockVerificationTokenCipher(ctrl)
+
+	expectRegisterPreparation(passwordManager, tokenGenerator, tokenCipher)
+
+	// Даже для сгенерированного username конфликт email не повод повторять INSERT.
+	repository.EXPECT().
+		CreateUser(gomock.Any(), gomock.Any()).
+		Return(auth.User{}, auth.ErrEmailAlreadyExists)
+
+	service := newRegisterTestService(repository, passwordManager, tokenGenerator, tokenCipher)
+	user, err := service.Register(context.Background(), auth.RegistrationInput{
+		Email:    "correct@example.com",
+		Name:     "Alex",
+		Password: "correct-password",
+	})
+	if user != (auth.User{}) {
+		t.Errorf("expected empty user, got %+v", user)
+	}
+	if !errors.Is(err, auth.ErrEmailAlreadyExists) {
+		t.Fatalf("expected ErrEmailAlreadyExists, got %v", err)
 	}
 }
