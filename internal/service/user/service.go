@@ -10,6 +10,9 @@ import (
 type User struct {
 	ID        uuid.UUID
 	Email     string
+	Username  string
+	Name      string
+	Surname   string
 	CreatedAt time.Time
 }
 

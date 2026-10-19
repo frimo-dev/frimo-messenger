@@ -21,7 +21,7 @@ func NewUserRepository(pool *pgxpool.Pool) *UserRepository {
 
 func (r *UserRepository) GetUserByID(ctx context.Context, userID uuid.UUID) (user.User, error) {
 	const query = `
-		SELECT email, created_at
+		SELECT email, username, name, surname, created_at
 		FROM users
 		WHERE id = $1;
 	`
@@ -29,7 +29,7 @@ func (r *UserRepository) GetUserByID(ctx context.Context, userID uuid.UUID) (use
 	var u user.User
 	u.ID = userID
 
-	err := r.pool.QueryRow(ctx, query, userID).Scan(&u.Email, &u.CreatedAt)
+	err := r.pool.QueryRow(ctx, query, userID).Scan(&u.Email, &u.Username, &u.Name, &u.Surname, &u.CreatedAt)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return user.User{}, user.ErrUserNotFound

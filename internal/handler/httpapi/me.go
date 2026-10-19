@@ -12,6 +12,9 @@ import (
 type meResponse struct {
 	UserID    uuid.UUID `json:"id"`
 	Email     string    `json:"email"`
+	Username  string    `json:"username"`
+	Name      string    `json:"name"`
+	Surname   string    `json:"surname"`
 	CreatedAt time.Time `json:"created_at"`
 }
 
@@ -35,6 +38,9 @@ func (a *API) me(w http.ResponseWriter, r *http.Request) {
 	a.respondJSON(r.Context(), w, http.StatusOK, meResponse{
 		UserID:    us.ID,
 		Email:     us.Email,
+		Username:  us.Username,
+		Name:      us.Name,
+		Surname:   us.Surname,
 		CreatedAt: us.CreatedAt,
 	})
 }
