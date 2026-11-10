@@ -1,6 +1,7 @@
 CREATE TYPE chat_type AS ENUM (
     'DIRECT',
-    'GROUP'
+    'GROUP',
+    'SAVED'
 );
 
 CREATE TYPE chat_history_visibility AS ENUM (
@@ -49,5 +50,27 @@ CREATE TABLE chats (
         CHECK (
             type <> 'DIRECT'
             OR history_visibility = 'VISIBLE'
+        ),
+
+    CONSTRAINT chats_saved_owner_required
+        CHECK (
+            type <> 'SAVED'
+            OR created_by IS NOT NULL
+        ),
+
+    CONSTRAINT chats_saved_topics_enabled
+        CHECK (
+            type <> 'SAVED'
+            OR topics_enabled = TRUE
+        ),
+
+    CONSTRAINT chats_saved_history_visible
+        CHECK (
+            type <> 'SAVED'
+            OR history_visibility = 'VISIBLE'
         )
 );
+
+CREATE UNIQUE INDEX chats_saved_owner_unique_idx
+    ON chats (created_by)
+    WHERE type = 'SAVED';
