@@ -51,3 +51,17 @@ CREATE TABLE hidden_messages_by_user (
         message_id
     )
 );
+
+CREATE TABLE message_send_requests (
+    sender_id uuid,
+    client_message_id uuid,
+
+    message_id uuid,
+    chat_id uuid,
+    topic_id uuid,
+
+    request_hash blob,
+    created_at timestamp,
+
+    PRIMARY KEY ((sender_id, client_message_id))
+) WITH default_time_to_live = 300;
