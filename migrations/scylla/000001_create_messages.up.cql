@@ -1,6 +1,6 @@
 CREATE TABLE messages (
-    message_id                      uuid,
-    message_type                    text,
+    message_id              uuid,
+    message_type            text,
     created_at              timestamp,
     sender_id               uuid,
 
@@ -57,7 +57,6 @@ CREATE TABLE message_send_requests (
     client_message_id uuid,
 
     message_id uuid,
-    chat_id uuid,
     topic_id uuid,
 
     request_hash blob,

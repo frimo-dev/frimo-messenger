@@ -38,10 +38,9 @@ type registerResponse struct {
 }
 
 func (a *API) registerUser(w http.ResponseWriter, r *http.Request) {
-	r.Body = http.MaxBytesReader(w, r.Body, 16*1024)
+	r.Body = http.MaxBytesReader(w, r.Body, maxRegisterBodySize)
 
 	var request registerRequest
-
 	if err := decodeJSON(r, &request); err != nil {
 		a.respondError(r.Context(), w, http.StatusBadRequest, "invalid_request", "invalid request body")
 		return
