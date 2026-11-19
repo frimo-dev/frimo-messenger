@@ -6,6 +6,7 @@ import (
 	"uuid"
 
 	"github.com/frimo-dev/frimo-messenger/internal/service/auth"
+	"github.com/frimo-dev/frimo-messenger/internal/service/message"
 	"github.com/frimo-dev/frimo-messenger/internal/service/user"
 	"go.uber.org/zap"
 )
@@ -24,21 +25,27 @@ type UserService interface {
 	GetPublicUserByUsername(ctx context.Context, username string) (user.PublicUser, error)
 }
 
+type MessageService interface {
+	SendMessage(ctx context.Context, input message.SendMessageInput) (message.SendMessageResult, error)
+}
+
 type API struct {
 	mux *http.ServeMux
 
 	logger *zap.Logger
 
-	authService AuthService
-	userService UserService
+	authService    AuthService
+	userService    UserService
+	messageService MessageService
 }
 
-func New(logger *zap.Logger, authService AuthService, userService UserService) *API {
+func New(logger *zap.Logger, authService AuthService, userService UserService, messageService MessageService) *API {
 	api := &API{
-		mux:         http.NewServeMux(),
-		logger:      logger,
-		authService: authService,
-		userService: userService,
+		mux:            http.NewServeMux(),
+		logger:         logger,
+		authService:    authService,
+		userService:    userService,
+		messageService: messageService,
 	}
 
 	api.registerRoutes()
@@ -65,6 +72,7 @@ func (a *API) registerRoutes() {
 	a.mux.HandleFunc("GET /auth/refresh", a.refresh)
 
 	a.mux.Handle("GET /me", AuthenticationMiddleware(a.logger, a.authService, http.HandlerFunc(a.me)))
-
 	a.mux.Handle("GET /users/by-username/{username}", AuthenticationMiddleware(a.logger, a.authService, http.HandlerFunc(a.getUserByUsername)))
+
+	a.mux.Handle("POST /send-message", AuthenticationMiddleware(a.logger, a.authService, http.HandlerFunc(a.sendMessage)))
 }

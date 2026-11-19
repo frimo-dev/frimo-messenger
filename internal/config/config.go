@@ -4,12 +4,14 @@ import (
 	"encoding/base64"
 	"fmt"
 	"os"
+	"strconv"
 	"time"
 )
 
 type Config struct {
 	HTTP             HTTPConfig
 	Database         DatabaseConfig
+	ScyllaDB         ScyllaDBConfig
 	Cache            RedisConfig
 	App              AppConfig
 	Auth             AuthConfig
@@ -24,6 +26,14 @@ type AppConfig struct {
 
 type DatabaseConfig struct {
 	URL string
+}
+
+type ScyllaDBConfig struct {
+	Host     string
+	Port     int
+	Keyspace string
+	Username string
+	Password string
 }
 
 type RedisConfig struct {
@@ -91,6 +101,13 @@ func Load() (Config, error) {
 		Database: DatabaseConfig{
 			URL: os.Getenv("DATABASE_URL"),
 		},
+		ScyllaDB: ScyllaDBConfig{
+			Host:     getEnv("SCYLLA_HOST", "localhost"),
+			Port:     getEnvInt("SCYLLA_PORT", 9042),
+			Keyspace: getEnv("SCYLLA_KEYSPACE", "messenger"),
+			Username: getEnv("SCYLLA_USERNAME", "cassandra"),
+			Password: os.Getenv("SCYLLA_PASSWORD"),
+		},
 		Cache: RedisConfig{
 			Addr:     os.Getenv("REDIS_ADDR"),
 			Password: os.Getenv("REDIS_PASSWORD"),
@@ -149,4 +166,18 @@ func getEnv(key, fallback string) string {
 	}
 
 	return value
+}
+
+func getEnvInt(key string, fallback int) int {
+	value, exists := os.LookupEnv(key)
+	if !exists {
+		return fallback
+	}
+
+	valueInt, err := strconv.Atoi(value)
+	if err != nil {
+		return fallback
+	}
+
+	return valueInt
 }

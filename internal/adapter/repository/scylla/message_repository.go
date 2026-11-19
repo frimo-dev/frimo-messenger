@@ -208,11 +208,11 @@ func (r *MessageRepository) getExistingReservation(ctx context.Context, input me
 
 func (r *MessageRepository) messageExists(ctx context.Context, topicID uuid.UUID, bucket string, messageID uuid.UUID) (bool, error) {
 	const query = `
-		SELECT id
+		SELECT message_id
 		FROM messages
 		WHERE topic_id = ?
 		  AND bucket = ?
-		  AND id = ?
+		  AND message_id = ?
 	`
 
 	var storedID gocql.UUID
@@ -271,10 +271,10 @@ func (r *MessageRepository) insertInitialVersion(
 func (r *MessageRepository) insertMessage(ctx context.Context, messageID uuid.UUID, topicID uuid.UUID, bucket string, senderID uuid.UUID, messageType string, createdAt time.Time, text string, writeTimestamp int64) error {
 	const query = `
 		INSERT INTO messages (
-			id,
+			message_id,
 			topic_id,
 			bucket,
-			type,
+			message_type,
 			created_at,
 			sender_id,
 			current_version,

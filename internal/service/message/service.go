@@ -2,6 +2,7 @@ package message
 
 import (
 	"context"
+	"fmt"
 	"uuid"
 )
 
@@ -58,7 +59,7 @@ func (s *Service) SendMessage(ctx context.Context, input SendMessageInput) (Send
 
 		directChat, err := s.chatRepository.GetOrCreateDirectChat(ctx, input.SenderID, *input.RecipientID)
 		if err != nil {
-			return SendMessageResult{}, err
+			return SendMessageResult{}, fmt.Errorf("failed get or create direct chat: %w", err)
 		}
 
 		messageID, err := s.repository.SaveMessage(ctx, SaveMessageInput{
@@ -73,7 +74,7 @@ func (s *Service) SendMessage(ctx context.Context, input SendMessageInput) (Send
 			RequestHash:     calculateRequestHash(*input.RecipientID, input.MessageText),
 		})
 		if err != nil {
-			return SendMessageResult{}, err
+			return SendMessageResult{}, fmt.Errorf("failed save message: %w", err)
 		}
 
 		return SendMessageResult{
@@ -83,10 +84,10 @@ func (s *Service) SendMessage(ctx context.Context, input SendMessageInput) (Send
 		}, nil
 	}
 
-	if input.TopicID != nil && input.ChatID != nil {
-		// TODO: здесь будет логика для отправки сообщения в многопользовательский чат
-		return SendMessageResult{}, ErrCannotMessageMultiuserChat
-	}
+	//if input.TopicID != nil && input.ChatID != nil {
+	// TODO: здесь будет логика для отправки сообщения в многопользовательский чат
+	//return SendMessageResult{}, ErrCannotMessageMultiuserChat
+	//}
 
 	return SendMessageResult{}, ErrInvalidDestination
 }

@@ -12,6 +12,7 @@ import (
 
 	postgres2 "github.com/frimo-dev/frimo-messenger/internal/adapter/repository/postgres"
 	redis2 "github.com/frimo-dev/frimo-messenger/internal/adapter/repository/redis"
+	"github.com/frimo-dev/frimo-messenger/internal/adapter/repository/scylla"
 	"github.com/frimo-dev/frimo-messenger/internal/config"
 	"github.com/frimo-dev/frimo-messenger/internal/handler/httpapi"
 	"github.com/frimo-dev/frimo-messenger/internal/observability"
@@ -19,6 +20,7 @@ import (
 	"github.com/frimo-dev/frimo-messenger/internal/security/secret"
 	"github.com/frimo-dev/frimo-messenger/internal/security/token"
 	"github.com/frimo-dev/frimo-messenger/internal/service/auth"
+	"github.com/frimo-dev/frimo-messenger/internal/service/message"
 	"github.com/frimo-dev/frimo-messenger/internal/service/user"
 	"github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
@@ -56,6 +58,17 @@ func main() {
 			logger.Info("failed closing redis", zap.Error(err))
 		}
 	}()
+
+	scyllaDBContext, cancelScyllaDB := context.WithTimeout(context.Background(), 5*time.Second)
+	scyllaDB, err := scylla.Open(scyllaDBContext, cfg.ScyllaDB)
+	cancelScyllaDB()
+
+	if err != nil {
+		logger.Fatal("failed opening scylla database", zap.Error(err))
+	}
+
+	defer scyllaDB.Close()
+	logger.Info("scyllaDB connection established")
 
 	verificationTokenCipher, err := secret.NewCipher(cfg.Auth.Verification.EncryptionKey)
 	if err != nil {
@@ -96,7 +109,11 @@ func main() {
 	userRepository := postgres2.NewUserRepository(databasePool)
 	userService := user.NewService(userRepository)
 
-	api := httpapi.New(logger, authService, userService)
+	chatRepository := postgres2.NewChatRepository(databasePool)
+	messageRepository := scylla.NewMessageRepository(scyllaDB)
+	messageService := message.NewService(messageRepository, chatRepository)
+
+	api := httpapi.New(logger, authService, userService, messageService)
 
 	server := &http.Server{
 		Addr:              cfg.HTTP.Address,
