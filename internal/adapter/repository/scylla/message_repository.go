@@ -119,11 +119,13 @@ func (r *MessageRepository) reserveMessageSend(ctx context.Context, input messag
 		IF NOT EXISTS;
 	`
 
-	createdAt, err := uuidV7Time(input.ID)
+	createdAt, err := getTimeFromUuidV7(input.ID)
 	if err != nil {
 		return sendReservation{}, fmt.Errorf("invalid message ID: %w", err)
 	}
 
+	// Если вставка не удалась(если данные уже есть, поскольку тут LWT),
+	// то в values окажутся данные, которые уже есть в таблице
 	values := make(map[string]any)
 
 	// TODO: перед production вернуться к LocalQuorum и LocalSerial
@@ -148,53 +150,35 @@ func (r *MessageRepository) reserveMessageSend(ctx context.Context, input messag
 		return sendReservation{MessageID: input.ID, TopicID: input.TopicID, CreatedAt: createdAt}, nil
 	}
 
-	// Условная вставка не выполнена, то есть операция с этим ключом уже зарегистрирована.
-	// Получаем существующую запись из таблицы
-	return r.getExistingReservation(ctx, input)
+	return parseExistingReservation(values, input)
 }
 
-// getExistingReservation получает данные первого запроса.
-func (r *MessageRepository) getExistingReservation(ctx context.Context, input message.SaveMessageInput) (sendReservation, error) {
-	const query = `
-		SELECT
-			message_id,
-			topic_id,
-			request_hash,
-			created_at
-		FROM message_send_requests
-		WHERE sender_id = ?
-		  AND client_message_id = ?
-	`
-
-	var storedMessageID gocql.UUID
-	var storedTopicID gocql.UUID
-	var storedHash []byte
-	var storedCreatedAt time.Time
-
-	err := r.session.Query(
-		query,
-		toCQLUUID(input.SenderID),
-		toCQLUUID(input.ClientMessageID),
-	).
-		WithContext(ctx).
-		Consistency(gocql.LocalQuorum).
-		Scan(
-			&storedMessageID,
-			&storedTopicID,
-			&storedHash,
-			&storedCreatedAt,
-		)
-	if err != nil {
-		return sendReservation{}, fmt.Errorf("failed to get existing reservation: %w", err)
+func parseExistingReservation(values map[string]any, input message.SaveMessageInput) (sendReservation, error) {
+	storedMessageID, ok := values["message_id"].(gocql.UUID)
+	if !ok {
+		return sendReservation{}, fmt.Errorf("invalid existing reservation message_id: %T", values["message_id"])
 	}
 
-	// Получили данные из message_send_requests. Если это корректная попытка идемпотентно повторить запрос,
-	// то помимо ключей идемпотентности(ClientMessageID) должны совпасть хэши сообщений
+	storedTopicID, ok := values["topic_id"].(gocql.UUID)
+	if !ok {
+		return sendReservation{}, fmt.Errorf("invalid existing reservation topic_id: %T", values["topic_id"])
+	}
+
+	storedHash, ok := values["request_hash"].([]byte)
+	if !ok {
+		return sendReservation{}, fmt.Errorf("invalid existing reservation request_hash: %T", values["request_hash"])
+	}
+
+	storedCreatedAt, ok := values["created_at"].(time.Time)
+	if !ok {
+		return sendReservation{}, fmt.Errorf("invalid existing reservation created_at: %T", values["created_at"])
+	}
+
+	// Повторное использование ClientMessageID с другими данными запрещено
 	if !bytes.Equal(storedHash, input.RequestHash[:]) {
 		return sendReservation{}, message.ErrIdempotencyConflict
 	}
 
-	// Также должны совпасть топики нового запроса и прошлого
 	if fromCQLUUID(storedTopicID) != input.TopicID {
 		return sendReservation{}, message.ErrIdempotencyConflict
 	}
@@ -304,7 +288,7 @@ func (r *MessageRepository) insertMessage(ctx context.Context, messageID uuid.UU
 		Exec()
 }
 
-func uuidV7Time(id uuid.UUID) (time.Time, error) {
+func getTimeFromUuidV7(id uuid.UUID) (time.Time, error) {
 	if id[6]>>4 != 7 {
 		return time.Time{}, errors.New("expected UUIDv7")
 	}

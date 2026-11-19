@@ -61,6 +61,7 @@ func (a *API) Handler() http.Handler {
 	return handler
 }
 
+// TODO: AuthenticationMiddleware должен быть методом какой-нибудь структуры, чтобы каждый раз зависимости не прокидывать
 func (a *API) registerRoutes() {
 	a.mux.HandleFunc("GET /health", a.health)
 
