@@ -439,7 +439,7 @@ func TestAPI_SendMessage(t *testing.T) {
 
 			req := httptest.NewRequest(
 				http.MethodPost,
-				"/messages",
+				"/send-message",
 				strings.NewReader(tt.body),
 			)
 
@@ -636,7 +636,7 @@ func TestAPI_SendMessage_Authentication(t *testing.T) {
 
 			req := httptest.NewRequest(
 				http.MethodPost,
-				"/messages",
+				"/send-message",
 				strings.NewReader(validBody),
 			)
 
@@ -702,7 +702,7 @@ func TestAPI_SendMessage_MethodNotAllowed(t *testing.T) {
 
 			req := httptest.NewRequest(
 				tt.method,
-				"/messages",
+				"/send-message",
 				nil,
 			)
 

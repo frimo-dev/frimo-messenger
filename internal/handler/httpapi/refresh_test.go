@@ -252,6 +252,7 @@ func TestAPI_Refresh(t *testing.T) {
 				zap.NewNop(),
 				authService,
 				userService,
+				mocks.NewMockMessageService(ctrl),
 			)
 
 			req := httptest.NewRequest(
@@ -401,6 +402,7 @@ func TestAPI_Refresh_MethodNotAllowed(t *testing.T) {
 				zap.NewNop(),
 				authService,
 				userService,
+				mocks.NewMockMessageService(ctrl),
 			)
 
 			req := httptest.NewRequest(

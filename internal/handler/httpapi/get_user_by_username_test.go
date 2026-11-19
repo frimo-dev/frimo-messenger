@@ -101,6 +101,7 @@ func TestAPI_GetUserByUsername(t *testing.T) {
 				zap.NewNop(),
 				authService,
 				userService,
+				mocks.NewMockMessageService(ctrl),
 			)
 
 			req := httptest.NewRequest(
@@ -222,6 +223,7 @@ func TestAPI_GetUserByUsername_Unauthorized(t *testing.T) {
 		zap.NewNop(),
 		authService,
 		userService,
+		mocks.NewMockMessageService(ctrl),
 	)
 
 	req := httptest.NewRequest(
@@ -278,6 +280,7 @@ func TestAPI_GetUserByUsername_MethodNotAllowed(t *testing.T) {
 				zap.NewNop(),
 				authService,
 				userService,
+				mocks.NewMockMessageService(ctrl),
 			)
 
 			req := httptest.NewRequest(

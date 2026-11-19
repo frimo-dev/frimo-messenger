@@ -183,6 +183,7 @@ func TestAPI_VerifyEmail(t *testing.T) {
 				zap.NewNop(),
 				authService,
 				userService,
+				mocks.NewMockMessageService(ctrl),
 			)
 
 			req := httptest.NewRequest(
@@ -285,6 +286,7 @@ func TestAPI_VerifyEmail_MethodNotAllowed(t *testing.T) {
 				zap.NewNop(),
 				authService,
 				userService,
+				mocks.NewMockMessageService(ctrl),
 			)
 
 			req := httptest.NewRequest(

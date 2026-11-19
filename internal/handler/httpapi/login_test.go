@@ -357,6 +357,7 @@ func TestAPI_Login(t *testing.T) {
 				zap.NewNop(),
 				authService,
 				userService,
+				mocks.NewMockMessageService(ctrl),
 			)
 
 			req := httptest.NewRequest(
@@ -478,6 +479,7 @@ func TestAPI_Login_MethodNotAllowed(t *testing.T) {
 				zap.NewNop(),
 				authService,
 				userService,
+				mocks.NewMockMessageService(ctrl),
 			)
 
 			req := httptest.NewRequest(

@@ -17,8 +17,9 @@ func TestAPI_Health_Success(t *testing.T) {
 
 	authService := mocks.NewMockAuthService(ctrl)
 	userService := mocks.NewMockUserService(ctrl)
+	messageService := mocks.NewMockMessageService(ctrl)
 
-	api := httpapi.New(zap.NewNop(), authService, userService)
+	api := httpapi.New(zap.NewNop(), authService, userService, messageService)
 
 	req := httptest.NewRequest(
 		http.MethodGet,
@@ -52,8 +53,9 @@ func TestAPI_Health_MethodNotAllowed(t *testing.T) {
 
 	authService := mocks.NewMockAuthService(ctrl)
 	userService := mocks.NewMockUserService(ctrl)
+	messageService := mocks.NewMockMessageService(ctrl)
 
-	api := httpapi.New(zap.NewNop(), authService, userService)
+	api := httpapi.New(zap.NewNop(), authService, userService, messageService)
 
 	req := httptest.NewRequest(
 		http.MethodPost,

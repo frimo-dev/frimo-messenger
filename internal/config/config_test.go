@@ -1,9 +1,28 @@
 package config
 
-import "testing"
+import (
+	"encoding/base64"
+	"os"
+	"testing"
+)
+
+func setValidConfigEnv(t *testing.T) {
+	t.Helper()
+
+	testSecret := base64.StdEncoding.EncodeToString(make([]byte, 32))
+	t.Setenv("HTTP_ADDR", ":8080")
+	t.Setenv("DATABASE_URL", "postgres://user:password@localhost:5432/test")
+	t.Setenv("APP_BASE_URL", "http://localhost")
+	t.Setenv("VERIFICATION_TOKEN_ENCRYPTION_KEY", testSecret)
+	t.Setenv("ACCESS_TOKEN_SECRET", testSecret)
+}
 
 func TestDefaultValueAddr(t *testing.T) {
-	t.Setenv("DATABASE_URL", "postgres://user:password@localhost:5432/test")
+	setValidConfigEnv(t)
+	// Setenv in setValidConfigEnv restores the original value after the test.
+	if err := os.Unsetenv("HTTP_ADDR"); err != nil {
+		t.Fatalf("unset HTTP_ADDR: %v", err)
+	}
 
 	cfg, err := Load()
 
@@ -17,17 +36,19 @@ func TestDefaultValueAddr(t *testing.T) {
 }
 
 func TestLoadRequiresDatabaseURL(t *testing.T) {
+	setValidConfigEnv(t)
 	t.Setenv("DATABASE_URL", "")
 
 	_, err := Load()
-	if err == nil {
-		t.Fatal("expected error")
+	want := "DATABASE_URL is required"
+	if err == nil || err.Error() != want {
+		t.Fatalf("Load() error = %v, want %q", err, want)
 	}
 }
 
 func TestValueAddrFromEnvironment(t *testing.T) {
+	setValidConfigEnv(t)
 	t.Setenv("HTTP_ADDR", ":9090")
-	t.Setenv("DATABASE_URL", "postgres://user:password@localhost:5432/test")
 
 	cfg, err := Load()
 
